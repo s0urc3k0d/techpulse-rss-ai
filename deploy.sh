@@ -36,7 +36,7 @@ mkdir -p logs
 
 # 6. Reload PM2
 echo "🔄 Rechargement PM2..."
-pm2 reload ecosystem.config.js --update-env
+pm2 reload ecosystem.config.cjs --update-env
 pm2 save
 
 # 7. Check PM2 status

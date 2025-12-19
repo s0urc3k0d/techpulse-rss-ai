@@ -7,7 +7,7 @@ import { schedulerRouter } from './routes/scheduler.js';
 import { initializeScheduler } from './scheduler.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5555;
 
 // Middleware
 app.use(cors());

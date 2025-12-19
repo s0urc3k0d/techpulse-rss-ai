@@ -192,7 +192,7 @@ sudo systemctl status certbot.timer
 cd /var/www/techpulse
 
 # Démarrage avec PM2
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 
 # Sauvegarde de la configuration
 pm2 save
@@ -411,7 +411,7 @@ npm run build
 npm run build:server
 
 # Rechargement PM2
-pm2 reload ecosystem.config.js --update-env
+pm2 reload ecosystem.config.cjs --update-env
 ```
 
 ## 📱 Vérification du déploiement

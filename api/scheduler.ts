@@ -79,13 +79,12 @@ const runDailyScraping = async (config: SchedulerConfig) => {
       return;
     }
 
-    // 2. Filter articles from last 24h
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
+    // 2. Filter articles from last 24h (exactly 24 hours back from now)
+    const last24Hours = new Date();
+    last24Hours.setHours(last24Hours.getHours() - 24);
 
-    const recentArticles = allItems.filter(item => item.isoDate >= yesterday);
-    console.log(`📅 [Scheduler] ${recentArticles.length} articles des dernières 24h`);
+    const recentArticles = allItems.filter(item => item.isoDate >= last24Hours);
+    console.log(`📅 [Scheduler] ${recentArticles.length} articles des dernières 24h (depuis ${last24Hours.toLocaleString('fr-FR')})`);
 
     if (recentArticles.length === 0) {
       console.log('⚠️  [Scheduler] Aucun article récent, abandon.');
