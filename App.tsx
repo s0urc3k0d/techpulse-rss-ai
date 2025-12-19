@@ -6,6 +6,11 @@ import { RSSItem, ProcessedArticle, ProcessingStatus, Category, PodcastScriptIte
 import { FeedManager } from './components/FeedManager';
 import { DateSelector } from './components/DateSelector';
 import { ArticleCard } from './components/ArticleCard';
+import { SearchBar } from './components/SearchBar';
+import { ExportMenu } from './components/ExportMenu';
+import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { fuzzySearch, getSearchStats } from './services/searchService';
+import { handleExportCSV, handleExportJSON, handleExportMarkdown } from './services/exportService';
 
 // Helper to format date for input type='date' (YYYY-MM-DD)
 const formatDateForInput = (date: Date) => date.toISOString().split('T')[0];
@@ -18,6 +23,7 @@ const App: React.FC = () => {
   const [articles, setArticles] = useState<ProcessedArticle[]>([]);
   const [status, setStatus] = useState<ProcessingStatus>({ total: 0, processed: 0, stage: 'idle' });
   const [selectedTag, setSelectedTag] = useState<Category | 'All'>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // New state for selection and podcast generation
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -118,10 +124,17 @@ const App: React.FC = () => {
     }
   };
 
+  // Filter by category, then by search query
   const filteredArticles = useMemo(() => {
-    if (selectedTag === 'All') return articles;
-    return articles.filter(a => a.category === selectedTag);
-  }, [articles, selectedTag]);
+    let filtered = selectedTag === 'All' ? articles : articles.filter(a => a.category === selectedTag);
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      filtered = fuzzySearch(filtered, searchQuery);
+    }
+    
+    return filtered;
+  }, [articles, selectedTag, searchQuery]);
 
   // Group stats for the dashboard
   const stats = useMemo(() => {
@@ -139,7 +152,7 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center shadow-lg shadow-primary/20">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
               </svg>
             </div>
@@ -148,13 +161,13 @@ const App: React.FC = () => {
             </h1>
           </div>
           
-          <div className="text-sm text-slate-400 hidden sm:block">
+          <div className="text-sm text-slate-400 hidden sm:block" aria-label="Informations">
              Powered by Google Gemini
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 py-8 space-y-6">
         
         {/* Controls Section */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -211,10 +224,39 @@ const App: React.FC = () => {
         {/* Results Section */}
         {articles.length > 0 && (
           <section className="space-y-6 animate-fade-in">
+            {/* Analytics Dashboard */}
+            <div className="bg-surface rounded-lg p-6 border border-slate-700">
+              <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+                <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Analytics
+              </h2>
+              <AnalyticsDashboard articles={articles} />
+            </div>
+
+            {/* Search Bar */}
+            <div className="bg-surface rounded-lg p-6 border border-slate-700">
+              <SearchBar 
+                onSearch={setSearchQuery}
+                placeholder="Rechercher dans les articles (titre, description, source)..."
+              />
+              <div className="mt-3 text-sm text-slate-400">
+                {getSearchStats(articles.length, filteredArticles.length, searchQuery)}
+              </div>
+            </div>
+
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 pb-4 border-b border-slate-700">
               <h2 className="text-2xl font-bold text-white">
                 Articles du jour <span className="text-slate-500 text-lg font-normal">({articles.length})</span>
               </h2>
+              
+              <ExportMenu
+                onExportCSV={() => handleExportCSV(filteredArticles)}
+                onExportJSON={() => handleExportJSON(filteredArticles)}
+                onExportMarkdown={() => handleExportMarkdown(filteredArticles)}
+                disabled={filteredArticles.length === 0}
+              />
               
               {/* Category Filter Pills */}
               <div className="flex flex-wrap gap-2 justify-center md:justify-end">

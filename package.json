@@ -4,19 +4,51 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch api/server.ts",
     "build": "vite build",
-    "preview": "vite preview"
+    "build:server": "tsc -p tsconfig.server.json",
+    "preview": "vite preview",
+    "start:server": "node dist/server.js",
+    "check-env": "node -e \"if(!process.env.GEMINI_API_KEY) { console.error('❌ GEMINI_API_KEY is not set'); process.exit(1); } else { console.log('✅ Environment variables OK'); }\"",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage"
   },
   "dependencies": {
-    "react-dom": "^19.2.3",
+    "@google/genai": "^1.34.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "fast-xml-parser": "^5.3.3",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.11",
     "react": "^19.2.3",
-    "@google/genai": "^1.34.0"
+    "react-dom": "^19.2.3",
+    "react-hot-toast": "^2.4.1",
+    "recharts": "^3.6.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.1.2",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^7.0.4",
     "@vitejs/plugin-react": "^5.0.0",
+    "@vitest/coverage-v8": "^1.2.0",
+    "@vitest/ui": "^1.2.0",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
+    "jsdom": "^24.0.0",
+    "postcss": "^8.4.32",
+    "rollup-plugin-visualizer": "^5.14.0",
+    "tailwindcss": "^3.4.0",
+    "tsx": "^4.7.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^1.2.0"
   }
 }

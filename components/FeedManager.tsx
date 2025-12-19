@@ -4,9 +4,10 @@ interface FeedManagerProps {
   feeds: string[];
   onAddFeed: (url: string) => void;
   onRemoveFeed: (url: string) => void;
+  onResetFeeds?: () => void;
 }
 
-export const FeedManager: React.FC<FeedManagerProps> = ({ feeds, onAddFeed, onRemoveFeed }) => {
+export const FeedManager: React.FC<FeedManagerProps> = ({ feeds, onAddFeed, onRemoveFeed, onResetFeeds }) => {
   const [newUrl, setNewUrl] = useState('');
   const [isOpen, setIsOpen] = useState(false);
 
@@ -53,6 +54,15 @@ export const FeedManager: React.FC<FeedManagerProps> = ({ feeds, onAddFeed, onRe
               Ajouter
             </button>
           </form>
+
+          {onResetFeeds && (
+            <button
+              onClick={onResetFeeds}
+              className="w-full mb-3 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded text-sm transition-colors"
+            >
+              Réinitialiser aux flux par défaut
+            </button>
+          )}
 
           <ul className="space-y-2 max-h-48 overflow-y-auto pr-2">
             {feeds.map((url) => (
