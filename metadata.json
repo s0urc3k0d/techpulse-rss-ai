@@ -1,0 +1,5 @@
+{
+  "name": "TechPulse RSS AI",
+  "description": "An intelligent RSS aggregator for tech news. It scrapes feeds, filters by date, and uses Gemini AI to automatically categorize articles into themes like Hardware, AI, and Gaming.",
+  "requestFramePermissions": []
+}
