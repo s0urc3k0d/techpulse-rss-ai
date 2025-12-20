@@ -181,7 +181,7 @@ export const generateDailyDigestEmail = (
                 Généré automatiquement par TechPulse AI
               </p>
               <p style="margin: 10px 0 0; font-size: 12px; color: #475569;">
-                Powered by Google Gemini AI
+                Une application Made in SOURCEKOD
               </p>
             </td>
           </tr>

@@ -184,7 +184,7 @@ const App: React.FC = () => {
           </div>
           
           <div className="text-sm text-slate-400 hidden sm:block" aria-label="Informations">
-             Powered by Google Gemini
+             Une application Made in SOURCEKOD
           </div>
         </div>
       </header>
