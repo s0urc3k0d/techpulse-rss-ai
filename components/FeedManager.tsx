@@ -5,17 +5,41 @@ interface FeedManagerProps {
   onAddFeed: (url: string) => void;
   onRemoveFeed: (url: string) => void;
   onResetFeeds?: () => void;
+  onBulkImport?: (urls: string[]) => void;
 }
 
-export const FeedManager: React.FC<FeedManagerProps> = ({ feeds, onAddFeed, onRemoveFeed, onResetFeeds }) => {
+export const FeedManager: React.FC<FeedManagerProps> = ({ 
+  feeds, 
+  onAddFeed, 
+  onRemoveFeed, 
+  onResetFeeds,
+  onBulkImport 
+}) => {
   const [newUrl, setNewUrl] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkUrls, setBulkUrls] = useState('');
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (newUrl && !feeds.includes(newUrl)) {
       onAddFeed(newUrl);
       setNewUrl('');
+    }
+  };
+
+  const handleBulkImportSubmit = () => {
+    if (!onBulkImport) return;
+    
+    const urls = bulkUrls
+      .split('\n')
+      .map(url => url.trim())
+      .filter(url => url && url.startsWith('http'));
+    
+    if (urls.length > 0) {
+      onBulkImport(urls);
+      setBulkUrls('');
+      setShowBulkImport(false);
     }
   };
 
@@ -54,6 +78,53 @@ export const FeedManager: React.FC<FeedManagerProps> = ({ feeds, onAddFeed, onRe
               Ajouter
             </button>
           </form>
+
+          <div className="flex gap-2 mb-3">
+            {onBulkImport && (
+              <button
+                onClick={() => setShowBulkImport(!showBulkImport)}
+                className="flex-1 bg-green-700 hover:bg-green-600 text-white px-3 py-2 rounded text-sm transition-colors font-medium"
+              >
+                {showBulkImport ? 'Annuler' : 'Import en masse'}
+              </button>
+            )}
+            {onResetFeeds && (
+              <button
+                onClick={onResetFeeds}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded text-sm transition-colors"
+              >
+                Réinitialiser
+              </button>
+            )}
+          </div>
+
+          {showBulkImport && (
+            <div className="mb-4 p-4 bg-surface border border-slate-600 rounded">
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Import en masse (une URL par ligne)
+              </label>
+              <textarea
+                value={bulkUrls}
+                onChange={(e) => setBulkUrls(e.target.value)}
+                placeholder="https://site1.com/rss&#10;https://site2.com/feed&#10;https://site3.com/rss"
+                className="w-full h-32 bg-dark border border-slate-600 rounded px-3 py-2 text-sm text-white focus:border-primary focus:outline-none font-mono resize-none"
+              />
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={handleBulkImportSubmit}
+                  className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                >
+                  Importer {bulkUrls.split('\n').filter(u => u.trim().startsWith('http')).length} flux
+                </button>
+                <button
+                  onClick={() => { setBulkUrls(''); setShowBulkImport(false); }}
+                  className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-4 py-2 rounded text-sm transition-colors"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
 
           {onResetFeeds && (
             <button

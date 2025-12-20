@@ -15,8 +15,19 @@ import { handleExportCSV, handleExportJSON, handleExportMarkdown } from './servi
 // Helper to format date for input type='date' (YYYY-MM-DD)
 const formatDateForInput = (date: Date) => date.toISOString().split('T')[0];
 
+// LocalStorage keys
+const FEEDS_STORAGE_KEY = 'techpulse_feeds';
+
 const App: React.FC = () => {
-  const [feeds, setFeeds] = useState<string[]>(DEFAULT_FEEDS);
+  // Load feeds from localStorage or use defaults
+  const [feeds, setFeeds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(FEEDS_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : DEFAULT_FEEDS;
+    } catch {
+      return DEFAULT_FEEDS;
+    }
+  });
   const [startDate, setStartDate] = useState(formatDateForInput(new Date()));
   const [endDate, setEndDate] = useState(formatDateForInput(new Date()));
   
@@ -30,8 +41,18 @@ const App: React.FC = () => {
   const [podcastScript, setPodcastScript] = useState<PodcastScriptItem[]>([]);
   const [showScriptModal, setShowScriptModal] = useState(false);
 
+  // Save feeds to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem(FEEDS_STORAGE_KEY, JSON.stringify(feeds));
+  }, [feeds]);
+
   const handleAddFeed = (url: string) => setFeeds(prev => [...prev, url]);
   const handleRemoveFeed = (url: string) => setFeeds(prev => prev.filter(f => f !== url));
+  const handleResetFeeds = () => setFeeds(DEFAULT_FEEDS);
+  const handleBulkImport = (urls: string[]) => {
+    const uniqueUrls = [...new Set([...feeds, ...urls])];
+    setFeeds(uniqueUrls);
+  };
 
   const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
@@ -176,7 +197,9 @@ const App: React.FC = () => {
             <FeedManager 
               feeds={feeds} 
               onAddFeed={handleAddFeed} 
-              onRemoveFeed={handleRemoveFeed} 
+              onRemoveFeed={handleRemoveFeed}
+              onResetFeeds={handleResetFeeds}
+              onBulkImport={handleBulkImport}
             />
           </div>
           
