@@ -1,5 +1,7 @@
 import { RSSItem } from '../types';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
 // Cache management
 const RSS_CACHE_KEY = 'rss_cache';
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
@@ -45,210 +47,91 @@ const setCachedData = (url: string, data: RSSItem[]): void => {
   }
 };
 
-// Exponential backoff retry helper
-const fetchWithRetry = async (
-  fetchFn: () => Promise<Response>,
-  maxRetries = 3,
-  baseDelay = 1000
-): Promise<Response> => {
-  let lastError: Error;
-  
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const response = await fetchFn();
-      if (response.ok) return response;
-      lastError = new Error(`HTTP ${response.status}`);
-    } catch (error) {
-      lastError = error as Error;
-    }
-    
-    if (i < maxRetries - 1) {
-      const delay = baseDelay * Math.pow(2, i);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  
-  throw lastError!;
-};
+/**
+ * Fetch RSS feeds via backend API to avoid CORS issues
+ */
+export const fetchAndParseRSS = async (feedUrls: string[]): Promise<RSSItem[]> => {
+  // Check cache first for all feeds
+  const allCachedItems: RSSItem[] = [];
+  const uncachedUrls: string[] = [];
 
-// Helper to fetch using multiple proxies to ensure reliability
-const fetchWithBackups = async (url: string, signal?: AbortSignal): Promise<string> => {
-  const encodedUrl = encodeURIComponent(url);
-  const proxies = [
-    {
-      name: 'AllOrigins',
-      fetch: async () => {
-        const res = await fetchWithRetry(
-          () => fetch(`https://api.allorigins.win/get?url=${encodedUrl}`, { signal }),
-          2
-        );
-        const data = await res.json();
-        if (data.contents) return data.contents;
-        throw new Error('No contents in response');
-      }
-    },
-    {
-      name: 'CorsProxy',
-      fetch: async () => {
-        const res = await fetchWithRetry(
-          () => fetch(`https://corsproxy.io/?${encodedUrl}`, { signal }),
-          2
-        );
-        const text = await res.text();
-        if (text && text.trim().length > 0) return text;
-        throw new Error('Empty response');
-      }
-    }
-  ];
-
-  let lastError: Error;
-  for (const proxy of proxies) {
-    try {
-      return await proxy.fetch();
-    } catch (e) {
-      lastError = e as Error;
-      console.warn(`${proxy.name} proxy failed for ${url}:`, e);
-    }
-  }
-
-  throw lastError! || new Error(`Failed to fetch ${url} via all available proxies`);
-};
-
-// Generate hash for deduplication
-const generateArticleHash = (title: string, link: string): string => {
-  const str = `${title.toLowerCase().trim()}::${link.toLowerCase().trim()}`;
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(36);
-};
-
-export const fetchAndParseRSS = async (url: string, timeout = 10000): Promise<RSSItem[]> => {
-  // Check cache first
-  const cached = getCachedData(url);
-  if (cached) {
-    console.log(`Using cached data for ${url}`);
-    return cached;
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-    
-    const xmlContent = await fetchWithBackups(url, controller.signal);
-    clearTimeout(timeoutId);
-
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
-    
-    // Check for XML parsing errors
-    const parserError = xmlDoc.querySelector('parsererror');
-    if (parserError) {
-      console.warn(`XML Parsing Error for ${url}: ${parserError.textContent}`);
-      return [];
-    }
-    
-    // Support both RSS <item> and Atom <entry>
-    const items = Array.from(xmlDoc.querySelectorAll("item, entry"));
-    
-    // Fallback for channel title (RSS vs Atom)
-    const channelTitle = xmlDoc.querySelector("channel > title, feed > title")?.textContent || new URL(url).hostname;
-
-    const articles = items.map((item) => {
-      const title = item.querySelector("title")?.textContent || "Sans titre";
-      
-      // RSS <link>text</link> vs Atom <link href="" />
-      let link = item.querySelector("link")?.textContent || "";
-      if (!link) {
-        const linkNode = item.querySelector("link[href]");
-        if (linkNode) link = linkNode.getAttribute("href") || "";
-      }
-
-      // Date fields can vary (pubDate, published, updated)
-      const pubDate = item.querySelector("pubDate, published, updated")?.textContent || "";
-      
-      // Description/Content fields
-      const description = item.querySelector("description, summary, content")?.textContent || 
-                          item.getElementsByTagNameNS("*", "encoded")[0]?.textContent || 
-                          "";
-      
-      // Attempt to parse date
-      const isoDate = new Date(pubDate);
-
-      return {
-        title,
-        link,
-        pubDate,
-        description: cleanDescription(description),
-        source: channelTitle,
-        isoDate: isNaN(isoDate.getTime()) ? new Date() : isoDate
-      };
-    });
-
-    // Cache the results
-    setCachedData(url, articles);
-    
-    return articles;
-  } catch (error) {
-    if ((error as Error).name === 'AbortError') {
-      console.error(`Timeout fetching RSS feed ${url}`);
+  for (const url of feedUrls) {
+    const cached = getCachedData(url);
+    if (cached) {
+      allCachedItems.push(...cached);
     } else {
-      console.error(`Error fetching RSS feed ${url}:`, error);
+      uncachedUrls.push(url);
     }
-    return [];
   }
-};
 
-// Fetch multiple RSS feeds concurrently with controlled concurrency
-export const fetchMultipleRSS = async (
-  urls: string[],
-  onProgress?: (fetched: number, total: number) => void,
-  concurrency = 4
-): Promise<RSSItem[]> => {
-  const allItems: RSSItem[] = [];
-  const seenHashes = new Set<string>();
-  let completed = 0;
+  // If all feeds are cached, return immediately
+  if (uncachedUrls.length === 0) {
+    console.log('All feeds loaded from cache');
+    return allCachedItems;
+  }
 
-  // Process URLs in batches
-  for (let i = 0; i < urls.length; i += concurrency) {
-    const batch = urls.slice(i, i + concurrency);
-    const results = await Promise.allSettled(
-      batch.map(url => fetchAndParseRSS(url))
-    );
+  try {
+    console.log(`Fetching ${uncachedUrls.length} RSS feeds via backend...`);
+    
+    const response = await fetch(`${API_BASE_URL}/rss/fetch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ feeds: uncachedUrls })
+    });
 
-    results.forEach((result, idx) => {
-      completed++;
-      if (result.status === 'fulfilled') {
-        // Deduplicate articles
-        result.value.forEach(article => {
-          const hash = generateArticleHash(article.title, article.link);
-          if (!seenHashes.has(hash)) {
-            seenHashes.add(hash);
-            allItems.push(article);
-          }
-        });
-      } else {
-        console.error(`Failed to fetch ${batch[idx]}:`, result.reason);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || `HTTP error ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch RSS feeds');
+    }
+
+    // Convert isoDate strings back to Date objects
+    const items: RSSItem[] = data.items.map((item: any) => ({
+      ...item,
+      isoDate: new Date(item.isoDate)
+    }));
+
+    // Cache the results by source
+    const itemsBySource = new Map<string, RSSItem[]>();
+    items.forEach(item => {
+      const source = item.source;
+      if (!itemsBySource.has(source)) {
+        itemsBySource.set(source, []);
       }
-      
-      if (onProgress) {
-        onProgress(completed, urls.length);
+      itemsBySource.get(source)!.push(item);
+    });
+
+    // Find matching URL for each source and cache
+    uncachedUrls.forEach(url => {
+      const hostname = new URL(url).hostname;
+      const sourceItems = items.filter(item => item.source === hostname);
+      if (sourceItems.length > 0) {
+        setCachedData(url, sourceItems);
       }
     });
-  }
 
-  return allItems;
-};
+    console.log(`Fetched ${items.length} items from ${data.stats.successfulFeeds} feeds`);
+    if (data.errors && data.errors.length > 0) {
+      console.warn('Some feeds failed:', data.errors);
+    }
 
-const cleanDescription = (html: string): string => {
-  try {
-    // Basic HTML strip to get plain text
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body.textContent || "";
-  } catch (e) {
-    return "";
+    // Combine cached and fresh items
+    return [...allCachedItems, ...items];
+
+  } catch (error) {
+    console.error('Error fetching RSS feeds:', error);
+    // Return cached items if available, even if fetch failed
+    if (allCachedItems.length > 0) {
+      console.log('Using cached data due to fetch error');
+      return allCachedItems;
+    }
+    throw error;
   }
 };

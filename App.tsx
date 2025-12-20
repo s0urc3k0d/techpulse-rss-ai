@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { fetchAndParseRSS } from './services/rssService';
-import { categorizeArticles, generatePodcastScript } from './services/geminiService';
+import { categorizeArticles, generatePodcastScript } from './services/apiService';
 import { DEFAULT_FEEDS, CATEGORY_COLORS } from './constants';
 import { RSSItem, ProcessedArticle, ProcessingStatus, Category, PodcastScriptItem } from './types';
 import { FeedManager } from './components/FeedManager';
@@ -55,21 +55,22 @@ const App: React.FC = () => {
     setPodcastScript([]);
 
     try {
-      // 1. Fetch all feeds
-      const allItems: RSSItem[] = [];
-      let feedsFetched = 0;
+      // 1. Fetch RSS feeds via backend (already handles all feeds at once)
+      setStatus({ 
+        total: feeds.length, 
+        processed: 0, 
+        stage: 'fetching',
+        message: `Récupération de ${feeds.length} flux RSS...`
+      });
 
-      for (const url of feeds) {
-        const feedItems = await fetchAndParseRSS(url);
-        allItems.push(...feedItems);
-        feedsFetched++;
-        setStatus({ 
-          total: feeds.length, 
-          processed: feedsFetched, 
-          stage: 'fetching',
-          message: `Récupération de ${feedsFetched}/${feeds.length} flux...`
-        });
-      }
+      const allItems = await fetchAndParseRSS(feeds);
+
+      setStatus({ 
+        total: feeds.length, 
+        processed: feeds.length, 
+        stage: 'fetching',
+        message: `${feeds.length} flux récupérés`
+      });
 
       // 2. Filter by date locally immediately
       setStatus({ ...status, stage: 'filtering', message: 'Filtrage par date...' });

@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { categorizeRouter } from './routes/categorize.js';
 import { generateScriptRouter } from './routes/generate-script.js';
 import { schedulerRouter } from './routes/scheduler.js';
+import { rssRouter } from './routes/rss.js';
 import { initializeScheduler } from './scheduler.js';
 
 const app = express();
@@ -30,6 +31,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Routes
+app.use('/api/rss', rssRouter);
 app.use('/api/categorize', categorizeRouter);
 app.use('/api/scheduler', schedulerRouter);
 app.use('/api/generate-script', generateScriptRouter);
