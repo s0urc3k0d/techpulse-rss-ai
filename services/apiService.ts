@@ -27,6 +27,8 @@ export const categorizeArticles = async (
   }));
 
   try {
+    console.log(`Sending ${articlesWithId.length} articles for categorization...`);
+    
     const response = await fetch(`${API_BASE_URL}/categorize`, {
       method: 'POST',
       headers: {
@@ -48,6 +50,8 @@ export const categorizeArticles = async (
 
     const data: CategorizeResponse = await response.json();
     
+    console.log('Categorization response:', data);
+    
     if (!data.success || !data.classifications) {
       throw new Error('Invalid response from API');
     }
@@ -56,6 +60,8 @@ export const categorizeArticles = async (
     data.classifications.forEach((item) => {
       classificationMap.set(item.id, item.category);
     });
+
+    console.log(`Classification map:`, Array.from(classificationMap.entries()));
 
     // Merge results
     return articlesWithId.map(article => ({
@@ -76,6 +82,8 @@ export const generatePodcastScript = async (
   if (articles.length === 0) return [];
 
   try {
+    console.log(`Generating podcast script for ${articles.length} articles...`);
+    
     const response = await fetch(`${API_BASE_URL}/generate-script`, {
       method: 'POST',
       headers: {
@@ -93,10 +101,13 @@ export const generatePodcastScript = async (
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('Script generation error response:', error);
       throw new Error(error.error || `HTTP error ${response.status}`);
     }
 
     const data: GenerateScriptResponse = await response.json();
+    
+    console.log('Script generation response:', data);
     
     if (!data.success || !data.scriptItems) {
       throw new Error('Invalid response from API');
@@ -106,6 +117,6 @@ export const generatePodcastScript = async (
 
   } catch (error) {
     console.error("Podcast script generation failed:", error);
-    return [];
+    throw error; // Re-throw pour que l'erreur soit visible
   }
 };
