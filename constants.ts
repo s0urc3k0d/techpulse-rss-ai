@@ -1,11 +1,25 @@
 import { Category } from './types';
 
 export const DEFAULT_FEEDS = [
+  // --- Francophones ---
   "https://www.frandroid.com/feed",
   "https://www.numerama.com/feed/",
   "https://korben.info/feed",
+  "https://next.ink/feed/",
+  "https://www.lemonde.fr/pixels/rss_full.xml",
+  "https://www.futura-sciences.com/rss/actualites.xml",
+  "https://www.sciencesetavenir.fr/rss.xml",
+  "https://www.zataz.com/feed/",
+  "https://lejournal.cnrs.fr/rss",
+  
+  // --- Anglophones ---
   "https://news.ycombinator.com/rss",
-  "https://www.theverge.com/rss/index.xml"
+  "https://www.theverge.com/rss/index.xml",
+  "https://feeds.arstechnica.com/arstechnica/index",
+  "https://www.wired.com/feed/rss",
+  "https://www.technologyreview.com/feed/",
+  "http://www.nature.com/nature/current_issue/rss",
+  "https://phys.org/rss-feed/"
 ];
 
 export const CATEGORY_COLORS: Record<Category, string> = {
