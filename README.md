@@ -120,15 +120,34 @@ techpulse-rss-ai/
 Create a `.env` file at the root with:
 
 ```bash
-# Required
-GEMINI_API_KEY=your_gemini_api_key
+# AI Provider Configuration (choose one)
+AI_PROVIDER=mistral              # 'mistral' (default) or 'gemini'
 
-# Optional
-PORT=3001                       # Backend API port
+# Mistral AI (recommended - free tier with generous limits)
+MISTRAL_API_KEY=your_mistral_api_key
+MISTRAL_MODEL=mistral-small-latest  # Optional, default: mistral-small-latest
+
+# OR Google Gemini (has strict free tier limits)
+# GEMINI_API_KEY=your_gemini_api_key
+# GEMINI_MODEL=gemini-2.0-flash-exp  # Optional
+
+# Server Configuration
+PORT=5555                       # Backend API port
 NODE_ENV=development            # development | production
 RATE_LIMIT_WINDOW_MS=60000     # Rate limit window (ms)
 RATE_LIMIT_MAX_REQUESTS=10     # Max requests per window
 ```
+
+### AI Provider Selection
+
+The application supports two AI providers:
+
+| Provider | Free Tier | Recommended |
+|----------|-----------|-------------|
+| **Mistral** | Generous limits | ✅ Yes |
+| **Gemini** | Very restrictive | ⚠️ May hit limits |
+
+Set `AI_PROVIDER=mistral` (default) or `AI_PROVIDER=gemini` in your `.env` file.
 
 ### Adding RSS Feeds
 

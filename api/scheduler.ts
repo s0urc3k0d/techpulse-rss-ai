@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { XMLParser } from 'fast-xml-parser';
-import { GoogleGenAI } from '@google/genai';
+import { categorizeForScheduler, getProviderInfo } from './utils/aiProvider.js';
 import { 
   createEmailTransporter, 
   sendEmail, 
@@ -91,37 +91,17 @@ const runDailyScraping = async (config: SchedulerConfig) => {
       return;
     }
 
-    // 3. Categorize with AI (simple category assignment for scheduler)
-    console.log('🤖 [Scheduler] Catégorisation IA en cours...');
-    
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not configured');
-    }
-    
-    const genAI = new GoogleGenAI({ apiKey });
+    // 3. Categorize with AI using abstracted provider
+    console.log(`🤖 [Scheduler] Catégorisation IA en cours avec ${getProviderInfo()}...`);
     
     const categorized: any[] = [];
     const batchSize = 20;
     
     for (let i = 0; i < recentArticles.length; i += batchSize) {
       const batch = recentArticles.slice(i, i + batchSize);
-      const prompt = `Categorize these tech articles into one of these categories: IA & ML, Dev & Tools, Cloud & DevOps, Security, Web & Frontend, Mobile, Data & Analytics, Autre.\n\n${batch.map((a: any, idx: number) => `${idx + 1}. ${a.title}`).join('\\n')}\n\nReturn ONLY a JSON array with category for each article: [{\"category\":\"...\"}, ...]`;
       
       try {
-        const result = await genAI.models.generateContent({
-          model: 'gemini-2.0-flash-exp',
-          contents: [
-            { role: 'user', parts: [{ text: prompt }] }
-          ]
-        });
-        
-        const text = result.text?.replace(/```json\\n?|```/g, '').trim();
-        if (!text) {
-          throw new Error('No response from Gemini');
-        }
-        
-        const categories = JSON.parse(text);
+        const categories = await categorizeForScheduler(batch);
         
         batch.forEach((article: any, idx: number) => {
           categorized.push({
@@ -131,7 +111,7 @@ const runDailyScraping = async (config: SchedulerConfig) => {
           });
         });
       } catch (error) {
-        console.error('Erreur catégorisation batch:', error);
+        console.error('❌ Erreur catégorisation batch:', error);
         // Fallback: add articles without categories
         batch.forEach((article: any) => {
           categorized.push({

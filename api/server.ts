@@ -7,6 +7,7 @@ import { generateScriptRouter } from './routes/generate-script.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { rssRouter } from './routes/rss.js';
 import { initializeScheduler } from './scheduler.js';
+import { getProviderInfo } from './utils/aiProvider.js';
 
 const app = express();
 const PORT = process.env.PORT || 5555;
@@ -28,7 +29,11 @@ app.use('/api/', limiter);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    aiProvider: getProviderInfo()
+  });
 });
 
 // Routes

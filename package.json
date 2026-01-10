@@ -11,14 +11,16 @@
     "build:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
     "start:server": "node dist/server.js",
-    "check-env": "node -e \"if(!process.env.GEMINI_API_KEY) { console.error('❌ GEMINI_API_KEY is not set'); process.exit(1); } else { console.log('✅ Environment variables OK'); }\"",
+    "check-env": "node -e \"const p = process.env.AI_PROVIDER || 'mistral'; const key = p === 'gemini' ? process.env.GEMINI_API_KEY : process.env.MISTRAL_API_KEY; if(!key) { console.error('❌ ' + (p === 'gemini' ? 'GEMINI_API_KEY' : 'MISTRAL_API_KEY') + ' is not set'); process.exit(1); } else { console.log('✅ AI Provider: ' + p.toUpperCase() + ' - Environment OK'); }\"",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
     "@google/genai": "^1.34.0",
+    "@mistralai/mistralai": "^1.11.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "fast-xml-parser": "^5.3.3",

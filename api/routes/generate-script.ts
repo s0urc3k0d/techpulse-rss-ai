@@ -1,19 +1,11 @@
 import { Router } from 'express';
-import { GoogleGenAI, Type } from '@google/genai';
+import { generateScriptWithAI, getProviderInfo } from '../utils/aiProvider.js';
 import { LRUCache, generateCacheKey } from '../utils/cache.js';
 
 const router = Router();
 
 // Initialize cache (50 entries, 24h TTL)
 const scriptCache = new LRUCache<any>(50, 24 * 60 * 60 * 1000);
-
-const getClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not configured');
-  }
-  return new GoogleGenAI({ apiKey });
-};
 
 router.post('/', async (req, res, next) => {
   try {
@@ -33,15 +25,16 @@ router.post('/', async (req, res, next) => {
     const cached = scriptCache.get(cacheKey);
     
     if (cached) {
-      console.log('Cache hit for podcast script');
+      console.log(`✅ Cache hit for podcast script (${getProviderInfo()})`);
       return res.json({
         success: true,
         scriptItems: cached,
-        cached: true
+        cached: true,
+        provider: getProviderInfo()
       });
     }
 
-    const ai = getClient();
+    console.log(`🎙️ Generating podcast script for ${articles.length} articles with ${getProviderInfo()}...`);
 
     const contentToAnalyze = articles.map((a: any) => ({
       id: a.id,
@@ -50,70 +43,22 @@ router.post('/', async (req, res, next) => {
       source: a.source
     }));
 
-    const prompt = `
-      You are a professional Tech Podcast Host. 
-      I will provide a list of news articles. 
-      For EACH article, I need two things in French (Français):
-      1. A "Catchy Title" (Titre accrocheur) that sounds great when spoken, to introduce the topic.
-      2. A list of 3-4 "Key Points" (Points clés) summarizing the essential information for the listener.
-      
-      Output strictly valid JSON.
-    `;
-
-    const responseSchema = {
-      type: Type.OBJECT,
-      properties: {
-        scriptItems: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              originalId: { type: Type.STRING },
-              catchyTitle: { type: Type.STRING, description: "A catchy hook title in French for a podcast" },
-              keyPoints: { 
-                type: Type.ARRAY, 
-                items: { type: Type.STRING },
-                description: "3-4 bullet points summarizing the article in French"
-              }
-            },
-            required: ["originalId", "catchyTitle", "keyPoints"]
-          }
-        }
-      },
-      required: ["scriptItems"]
-    };
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-exp",
-      contents: [
-        { role: "user", parts: [{ text: prompt }] },
-        { role: "user", parts: [{ text: JSON.stringify(contentToAnalyze) }] }
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-      }
-    });
-
-    const resultText = response.text;
-    if (!resultText) {
-      throw new Error('No response from Gemini');
-    }
-
-    const parsed = JSON.parse(resultText);
-    const scriptItems = parsed.scriptItems || [];
+    const scriptItems = await generateScriptWithAI(contentToAnalyze);
     
     // Cache the result
     scriptCache.set(cacheKey, scriptItems);
     
+    console.log(`✅ Generated ${scriptItems.length} script items successfully`);
+
     res.json({
       success: true,
       scriptItems,
-      cached: false
+      cached: false,
+      provider: getProviderInfo()
     });
 
   } catch (error: any) {
-    console.error('Podcast script generation error:', error);
+    console.error('❌ Podcast script generation error:', error.message);
     next(error);
   }
 });
