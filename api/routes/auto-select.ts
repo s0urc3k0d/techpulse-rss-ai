@@ -64,7 +64,7 @@ IMPORTANT: Réponds UNIQUEMENT avec un JSON valide contenant les IDs des article
 }`;
 
     const config = getProviderConfig();
-    const apiKey = getApiKey();
+    const apiKey = getApiKey(config.provider);
     let responseText: string;
 
     if (config.provider === 'mistral') {
