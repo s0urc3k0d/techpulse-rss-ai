@@ -9,6 +9,7 @@ import { ArticleCard } from './components/ArticleCard';
 import { SearchBar } from './components/SearchBar';
 import { ExportMenu } from './components/ExportMenu';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { PodcastPrep } from './components/PodcastPrep';
 import { fuzzySearch, getSearchStats } from './services/searchService';
 import { handleExportCSV, handleExportJSON, handleExportMarkdown } from './services/exportService';
 
@@ -18,7 +19,12 @@ const formatDateForInput = (date: Date) => date.toISOString().split('T')[0];
 // LocalStorage keys
 const FEEDS_STORAGE_KEY = 'techpulse_feeds';
 
+type AppTab = 'veille' | 'podcast-prep';
+
 const App: React.FC = () => {
+  // Tab state
+  const [activeTab, setActiveTab] = useState<AppTab>('veille');
+  
   // Load feeds from localStorage or use defaults
   const [feeds, setFeeds] = useState<string[]>(() => {
     try {
@@ -206,6 +212,36 @@ const App: React.FC = () => {
               TechPulse AI
             </h1>
           </div>
+
+          {/* Tab Navigation */}
+          <nav className="flex bg-dark rounded-lg p-1 border border-slate-700">
+            <button
+              onClick={() => setActiveTab('veille')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === 'veille'
+                  ? 'bg-primary text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+              </svg>
+              Veille Tech
+            </button>
+            <button
+              onClick={() => setActiveTab('podcast-prep')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === 'podcast-prep'
+                  ? 'bg-primary text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 0112.728 0" />
+              </svg>
+              Prép. Podcast
+            </button>
+          </nav>
           
           <div className="text-sm text-slate-400 hidden sm:block" aria-label="Informations">
              Une application Made in SOURCEKOD
@@ -215,6 +251,14 @@ const App: React.FC = () => {
 
       <main id="main-content" className="max-w-7xl mx-auto px-4 py-8 space-y-6">
         
+        {/* Podcast Prep Tab */}
+        {activeTab === 'podcast-prep' && (
+          <PodcastPrep />
+        )}
+
+        {/* Veille Tech Tab */}
+        {activeTab === 'veille' && (
+          <>
         {/* Controls Section */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-4">
@@ -408,16 +452,18 @@ const App: React.FC = () => {
           </section>
         )}
         
-        {status.stage === 'error' && (
+        {status.stage === 'error' && activeTab === 'veille' && (
           <div className="p-4 bg-red-900/20 border border-red-500/50 rounded text-red-200 text-center">
             {status.message}
           </div>
+        )}
+          </>
         )}
 
       </main>
 
       {/* Floating Action Bar for Selection */}
-      {selectedIds.size > 0 && !showScriptModal && (
+      {activeTab === 'veille' && selectedIds.size > 0 && !showScriptModal && (
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 bg-surface/90 backdrop-blur-md border border-slate-600 rounded-full shadow-2xl px-6 py-3 flex items-center gap-4 animate-bounce-in">
           <div className="text-sm font-semibold text-white">
             <span className="text-primary font-bold text-lg mr-1">{selectedIds.size}</span>
