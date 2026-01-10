@@ -115,7 +115,7 @@ const App: React.FC = () => {
         total: filteredItems.length, 
         processed: 0, 
         stage: 'analyzing', 
-        message: `Analyse de ${filteredItems.length} articles avec Gemini...` 
+        message: `Analyse de ${filteredItems.length} articles avec l'IA...` 
       });
 
       const categorized = await categorizeArticles(filteredItems);
