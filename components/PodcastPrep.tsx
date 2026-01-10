@@ -258,6 +258,45 @@ https://example.com/article-3"
               </div>
             ))}
           </div>
+
+          {/* Summary of all titles at the bottom */}
+          {results.filter(r => !r.error).length > 0 && (
+            <div className="bg-surface border border-slate-700 rounded-lg p-6 mt-8">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <svg className="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                  Récap des titres
+                </h3>
+                <button
+                  onClick={() => {
+                    const text = results
+                      .filter(r => !r.error)
+                      .map((a, i) => `${i + 1}. ${a.catchyTitle}`)
+                      .join('\n');
+                    navigator.clipboard.writeText(text);
+                  }}
+                  className="text-slate-400 hover:text-white transition-colors p-2"
+                  title="Copier la liste"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+              </div>
+              <ol className="space-y-2">
+                {results.filter(r => !r.error).map((article, idx) => (
+                  <li key={idx} className="flex items-start gap-3">
+                    <span className="bg-primary/20 text-primary font-bold text-sm px-2 py-0.5 rounded shrink-0">
+                      {idx + 1}
+                    </span>
+                    <span className="text-slate-300">{article.catchyTitle}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       )}
 
