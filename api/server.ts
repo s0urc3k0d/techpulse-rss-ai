@@ -12,6 +12,9 @@ import { getProviderInfo } from './utils/aiProvider.js';
 const app = express();
 const PORT = process.env.PORT || 5555;
 
+// Trust proxy for rate limiter behind nginx/reverse proxy
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
