@@ -35,7 +35,7 @@ export const getProviderConfig = (): AIProviderConfig => {
 };
 
 // Get API key based on provider
-const getApiKey = (provider: AIProvider): string => {
+export const getApiKey = (provider: AIProvider): string => {
   if (provider === 'gemini') {
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new Error('GEMINI_API_KEY is not configured');
