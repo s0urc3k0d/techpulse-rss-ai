@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { fetchAndParseRSS } from './services/rssService';
-import { categorizeArticles, generatePodcastScript } from './services/apiService';
+import { categorizeArticles, generatePodcastScript, autoSelectArticles } from './services/apiService';
 import { DEFAULT_FEEDS, CATEGORY_COLORS } from './constants';
 import { RSSItem, ProcessedArticle, ProcessingStatus, Category, PodcastScriptItem } from './types';
 import { FeedManager } from './components/FeedManager';
@@ -40,6 +40,8 @@ const App: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [podcastScript, setPodcastScript] = useState<PodcastScriptItem[]>([]);
   const [showScriptModal, setShowScriptModal] = useState(false);
+  const [isAutoSelecting, setIsAutoSelecting] = useState(false);
+  const [autoSelectReasoning, setAutoSelectReasoning] = useState<string>('');
 
   // Save feeds to localStorage whenever they change
   useEffect(() => {
@@ -67,6 +69,28 @@ const App: React.FC = () => {
   const clearSelection = () => {
     setSelectedIds(new Set());
     setPodcastScript([]);
+    setAutoSelectReasoning('');
+  };
+
+  const handleAutoSelect = async (maxPerCategory: number = 5) => {
+    if (articles.length === 0) return;
+    
+    setIsAutoSelecting(true);
+    setAutoSelectReasoning('');
+    
+    try {
+      const result = await autoSelectArticles(articles, maxPerCategory);
+      
+      if (result.success && result.selectedIds.length > 0) {
+        setSelectedIds(new Set(result.selectedIds));
+        setAutoSelectReasoning(result.reasoning);
+      }
+    } catch (error) {
+      console.error('Auto-select failed:', error);
+      setStatus({ ...status, stage: 'error', message: "Erreur lors de l'auto-sélection" });
+    } finally {
+      setIsAutoSelecting(false);
+    }
   };
 
   const runScraper = async () => {
@@ -271,9 +295,41 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 pb-4 border-b border-slate-700">
-              <h2 className="text-2xl font-bold text-white">
-                Articles du jour <span className="text-slate-500 text-lg font-normal">({articles.length})</span>
-              </h2>
+              <div className="flex items-center gap-4">
+                <h2 className="text-2xl font-bold text-white">
+                  Articles du jour <span className="text-slate-500 text-lg font-normal">({articles.length})</span>
+                </h2>
+                
+                {/* Auto-select button */}
+                <button
+                  onClick={() => handleAutoSelect(5)}
+                  disabled={isAutoSelecting || articles.length === 0}
+                  className={`
+                    px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2
+                    ${isAutoSelecting 
+                      ? 'bg-slate-600 cursor-not-allowed text-slate-400' 
+                      : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-amber-500/20'}
+                  `}
+                  title="L'IA sélectionne les 5 meilleurs articles par catégorie"
+                >
+                  {isAutoSelecting ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Analyse...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                      Top 5/catégorie
+                    </>
+                  )}
+                </button>
+              </div>
               
               <ExportMenu
                 onExportCSV={() => handleExportCSV(filteredArticles)}
@@ -318,6 +374,19 @@ const App: React.FC = () => {
                 })}
               </div>
             </div>
+
+            {/* Auto-select reasoning banner */}
+            {autoSelectReasoning && selectedIds.size > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex items-start gap-3">
+                <svg className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <div>
+                  <span className="font-semibold text-amber-300">Auto-sélection IA : </span>
+                  <span className="text-slate-300">{autoSelectReasoning}</span>
+                </div>
+              </div>
+            )}
 
             {/* Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

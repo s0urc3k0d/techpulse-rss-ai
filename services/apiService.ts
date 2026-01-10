@@ -148,3 +148,55 @@ export const generatePodcastScript = async (
     throw error; // Re-throw pour que l'erreur soit visible
   }
 };
+interface AutoSelectResponse {
+  success: boolean;
+  selectedIds: string[];
+  selectionsByCategory: Record<string, string[]>;
+  reasoning: string;
+}
+
+export const autoSelectArticles = async (
+  articles: ProcessedArticle[],
+  maxPerCategory: number = 5
+): Promise<AutoSelectResponse> => {
+  if (articles.length === 0) {
+    return { success: true, selectedIds: [], selectionsByCategory: {}, reasoning: '' };
+  }
+
+  try {
+    console.log(`Auto-selecting top ${maxPerCategory} articles per category from ${articles.length} articles...`);
+    
+    const response = await fetch(`${API_BASE_URL}/auto-select`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        articles: articles.map(a => ({
+          id: a.id,
+          title: a.title,
+          description: a.description.substring(0, 200),
+          category: a.category,
+          source: a.source
+        })),
+        maxPerCategory
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Auto-select error response:', error);
+      throw new Error(error.error || `HTTP error ${response.status}`);
+    }
+
+    const data: AutoSelectResponse = await response.json();
+    
+    console.log(`Auto-selected ${data.selectedIds.length} articles:`, data.reasoning);
+    
+    return data;
+
+  } catch (error) {
+    console.error("Auto-selection failed:", error);
+    throw error;
+  }
+};

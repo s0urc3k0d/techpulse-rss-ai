@@ -16,8 +16,8 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid articles array' });
     }
 
-    if (articles.length > 50) {
-      return res.status(400).json({ error: 'Too many articles (max 50 per request)' });
+    if (articles.length > 100) {
+      return res.status(400).json({ error: 'Too many articles (max 100 per request)' });
     }
 
     // Check cache first

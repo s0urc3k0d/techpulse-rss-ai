@@ -6,6 +6,7 @@ import { categorizeRouter } from './routes/categorize.js';
 import { generateScriptRouter } from './routes/generate-script.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { rssRouter } from './routes/rss.js';
+import autoSelectRouter from './routes/auto-select.js';
 import { initializeScheduler } from './scheduler.js';
 import { getProviderInfo } from './utils/aiProvider.js';
 
@@ -44,6 +45,7 @@ app.use('/api/rss', rssRouter);
 app.use('/api/categorize', categorizeRouter);
 app.use('/api/scheduler', schedulerRouter);
 app.use('/api/generate-script', generateScriptRouter);
+app.use('/api/auto-select', autoSelectRouter);
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
