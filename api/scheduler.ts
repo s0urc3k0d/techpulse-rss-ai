@@ -7,7 +7,7 @@ import {
   generateDailyDigestEmail, 
   generateDailyDigestText 
 } from './utils/emailService.js';
-import { saveArticles, articleExists } from './utils/feedStorage.js';
+import { saveArticles, articleExists, archivePreviousMonth } from './utils/feedStorage.js';
 
 // Fetch RSS helper (server-side only)
 async function fetchAndParseRSS(url: string): Promise<any[]> {
@@ -227,13 +227,22 @@ export const initializeScheduler = () => {
   console.log(`📧 [Scheduler] Email destination: ${config.emailTo}`);
   console.log(`📡 [Scheduler] ${config.feeds.length} flux RSS configurés`);
 
-  // Schedule the job
+  // Schedule the daily job
   const task = cron.schedule(config.cronExpression, () => {
     runDailyScraping(config);
   }, {
     timezone: process.env.SCHEDULER_TIMEZONE || 'Europe/Paris'
   });
 
+  // Schedule monthly archive (le 1er de chaque mois à 2h du matin)
+  const archiveTask = cron.schedule('0 2 1 * *', () => {
+    console.log('📆 [Scheduler] Archivage mensuel automatique...');
+    runMonthlyArchive();
+  }, {
+    timezone: process.env.SCHEDULER_TIMEZONE || 'Europe/Paris'
+  });
+
+  console.log('📦 [Scheduler] Archivage mensuel programmé (1er du mois à 2h)');
   console.log('✅ [Scheduler] Initialisé avec succès');
 
   // Optional: Run immediately if in dev mode
@@ -350,6 +359,28 @@ export const triggerBlogFeedUpdate = async (customFeeds?: string[]): Promise<{ s
     return { saved: result.saved, duplicates: result.duplicates };
   } catch (error) {
     console.error('❌ [BlogFeed] Erreur lors de la mise à jour:', error);
+    throw error;
+  }
+};
+
+/**
+ * Archive du mois précédent (à exécuter le 1er de chaque mois)
+ */
+const runMonthlyArchive = async () => {
+  console.log('📦 [Scheduler] Démarrage de l\'archivage mensuel...');
+  
+  try {
+    const result = archivePreviousMonth();
+    
+    if (result) {
+      console.log(`✅ [Scheduler] Archivage terminé: ${result.archived} articles pour ${result.month}`);
+      return result;
+    } else {
+      console.log('ℹ️  [Scheduler] Aucun article à archiver pour le mois précédent');
+      return null;
+    }
+  } catch (error) {
+    console.error('❌ [Scheduler] Erreur lors de l\'archivage:', error);
     throw error;
   }
 };

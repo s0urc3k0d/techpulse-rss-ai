@@ -21,6 +21,8 @@ import {
   clearAllArticles,
   slugifyCategory,
   getCategoryFromSlug,
+  getAvailableMonths,
+  archivePreviousMonth,
   SavedArticle
 } from '../utils/feedStorage.js';
 
@@ -123,23 +125,39 @@ const escapeXml = (str: string): string => {
 
 /**
  * GET /api/feeds/stats
- * Statistiques des articles sauvegardés
+ * Statistiques des articles sauvegardés (enrichies avec infos temporelles)
  */
 router.get('/stats', (req, res) => {
   try {
     const stats = getStats();
     const categories = getCategories();
+    const months = getAvailableMonths();
     
     res.json({
       success: true,
-      stats,
+      stats: {
+        totalSaved: stats.totalSaved,
+        currentMonthCount: stats.currentMonthCount,
+        byCategory: stats.byCategory,
+        bySource: stats.bySource,
+        byMonth: stats.byMonth,
+        lastUpdated: stats.lastUpdated
+      },
       categories,
+      months,
+      archives: stats.archives,
       feedUrls: {
         all: '/api/feeds/all.xml',
         byCategory: categories.map(c => ({
           name: c.name,
           url: `/api/feeds/${c.slug}.xml`,
           count: c.count
+        })),
+        byMonth: months.map(m => ({
+          month: m.month,
+          url: `/api/feeds/archive/${m.month}.xml`,
+          count: m.articleCount,
+          isArchived: m.isArchived
         }))
       }
     });
@@ -170,23 +188,108 @@ router.get('/categories', (req, res) => {
  */
 router.get('/articles', (req, res) => {
   try {
-    const { category, limit, since, until } = req.query;
+    const { category, limit, since, until, month } = req.query;
     
     const options: any = {};
     if (category) options.category = category as string;
     if (limit) options.limit = parseInt(limit as string);
     if (since) options.since = new Date(since as string);
     if (until) options.until = new Date(until as string);
+    if (month) options.month = month as string; // YYYY-MM pour archives
     
     const articles = getAllArticles(options);
     
     res.json({
       success: true,
       count: articles.length,
+      month: month || 'current',
       articles
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/feeds/months
+ * Liste des mois disponibles (courant + archives)
+ */
+router.get('/months', (req, res) => {
+  try {
+    const months = getAvailableMonths();
+    res.json({
+      success: true,
+      months
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/feeds/archive
+ * Déclencher l'archivage du mois précédent manuellement
+ */
+router.post('/archive', (req, res) => {
+  try {
+    const result = archivePreviousMonth();
+    
+    if (result) {
+      res.json({
+        success: true,
+        message: `${result.archived} articles archivés pour ${result.month}`,
+        ...result
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'Aucun article à archiver pour le mois précédent'
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/feeds/archive/:month.xml
+ * Flux RSS pour un mois spécifique archivé (YYYY-MM)
+ */
+router.get('/archive/:month.xml', (req, res) => {
+  try {
+    const { month } = req.params;
+    const { limit, category } = req.query;
+    
+    // Validation format YYYY-MM
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).send('<!-- Error: Format de mois invalide (YYYY-MM) -->');
+    }
+    
+    const options: any = { month };
+    if (limit) options.limit = parseInt(limit as string);
+    if (category) options.category = category as string;
+    
+    const articles = getAllArticles(options);
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    
+    // Formatage du mois pour l'affichage
+    const [year, monthNum] = month.split('-');
+    const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+    const monthName = monthNames[parseInt(monthNum) - 1];
+    
+    const rss = generateRSSFeed(
+      articles,
+      `TechPulse AI - Archives ${monthName} ${year}`,
+      `Flux RSS des articles tech archivés de ${monthName} ${year}`,
+      `${baseUrl}/api/feeds/archive/${month}.xml`
+    );
+    
+    res.set('Content-Type', 'application/rss+xml; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=3600'); // Cache 1 heure (archives)
+    res.send(rss);
+  } catch (error: any) {
+    res.status(500).send(`<!-- Error: ${error.message} -->`);
   }
 });
 

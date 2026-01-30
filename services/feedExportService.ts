@@ -20,8 +20,10 @@ export interface SavedArticleInput {
 
 export interface FeedStats {
   totalSaved: number;
+  currentMonthCount: number;
   byCategory: Record<string, number>;
   bySource: Record<string, number>;
+  byMonth: Record<string, number>;
   lastUpdated: string;
 }
 
@@ -29,6 +31,13 @@ export interface FeedCategory {
   name: string;
   slug: string;
   count: number;
+}
+
+export interface FeedMonth {
+  month: string;
+  articleCount: number;
+  isArchived: boolean;
+  weeks?: number;
 }
 
 export interface SaveResult {
@@ -82,14 +91,16 @@ export const saveArticlesForBlog = async (
 };
 
 /**
- * Récupère les statistiques du flux RSS
+ * Récupère les statistiques du flux RSS (enrichies avec infos temporelles)
  */
 export const getFeedStats = async (): Promise<{
   stats: FeedStats;
   categories: FeedCategory[];
+  months: FeedMonth[];
   feedUrls: {
     all: string;
     byCategory: Array<{ name: string; url: string; count: number }>;
+    byMonth: Array<{ month: string; url: string; count: number; isArchived: boolean }>;
   };
 }> => {
   const response = await fetch(`${API_BASE_URL}/feeds/stats`);
@@ -125,12 +136,14 @@ export const getSavedArticles = async (options?: {
   limit?: number;
   since?: string;
   until?: string;
+  month?: string; // YYYY-MM pour accéder aux archives
 }): Promise<SavedArticleInput[]> => {
   const params = new URLSearchParams();
   if (options?.category) params.append('category', options.category);
   if (options?.limit) params.append('limit', options.limit.toString());
   if (options?.since) params.append('since', options.since);
   if (options?.until) params.append('until', options.until);
+  if (options?.month) params.append('month', options.month);
 
   const url = `${API_BASE_URL}/feeds/articles${params.toString() ? '?' + params.toString() : ''}`;
   const response = await fetch(url);
@@ -141,6 +154,36 @@ export const getSavedArticles = async (options?: {
 
   const data = await response.json();
   return data.articles;
+};
+
+/**
+ * Récupère les mois disponibles (courant + archives)
+ */
+export const getAvailableMonths = async (): Promise<FeedMonth[]> => {
+  const response = await fetch(`${API_BASE_URL}/feeds/months`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch available months');
+  }
+
+  const data = await response.json();
+  return data.months;
+};
+
+/**
+ * Déclenche l'archivage manuel du mois précédent
+ */
+export const triggerArchive = async (): Promise<{ success: boolean; message: string; archived?: number; month?: string }> => {
+  const response = await fetch(`${API_BASE_URL}/feeds/archive`, {
+    method: 'POST'
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to trigger archive');
+  }
+
+  return await response.json();
 };
 
 /**
@@ -174,12 +217,15 @@ export const clearAllFeedArticles = async (): Promise<void> => {
 };
 
 /**
- * Génère l'URL du flux RSS
+ * Génère l'URL du flux RSS (catégorie ou mois d'archive)
  */
-export const getFeedUrl = (category?: string): string => {
+export const getFeedUrl = (options?: { category?: string; month?: string }): string => {
   const baseUrl = window.location.origin;
-  if (category) {
-    return `${baseUrl}/api/feeds/${category}.xml`;
+  if (options?.month) {
+    return `${baseUrl}/api/feeds/archive/${options.month}.xml`;
+  }
+  if (options?.category) {
+    return `${baseUrl}/api/feeds/${options.category}.xml`;
   }
   return `${baseUrl}/api/feeds/all.xml`;
 };
@@ -187,7 +233,7 @@ export const getFeedUrl = (category?: string): string => {
 /**
  * Copie l'URL du flux dans le presse-papier
  */
-export const copyFeedUrl = async (category?: string): Promise<void> => {
-  const url = getFeedUrl(category);
+export const copyFeedUrl = async (options?: { category?: string; month?: string }): Promise<void> => {
+  const url = getFeedUrl(options);
   await navigator.clipboard.writeText(url);
 };
