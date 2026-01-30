@@ -1,5 +1,5 @@
 import express from 'express';
-import { triggerManualScraping } from '../scheduler.js';
+import { triggerManualScraping, triggerBlogFeedUpdate } from '../scheduler.js';
 
 const router = express.Router();
 
@@ -44,6 +44,32 @@ router.post('/trigger', async (req, res) => {
 });
 
 /**
+ * POST /api/scheduler/blog-feed
+ * Trigger manual blog feed update (fetch, categorize, save)
+ */
+router.post('/blog-feed', async (req, res) => {
+  try {
+    const { feeds } = req.body;
+    
+    // Trigger update asynchronously
+    triggerBlogFeedUpdate(feeds).catch(error => {
+      console.error('Error in blog feed update:', error);
+    });
+
+    res.json({ 
+      message: 'Blog feed update triggered successfully',
+      note: 'Articles will be fetched, categorized and saved to the blog feed'
+    });
+  } catch (error: any) {
+    console.error('Error triggering blog feed update:', error);
+    res.status(500).json({ 
+      error: 'Failed to trigger blog feed update',
+      message: error.message 
+    });
+  }
+});
+
+/**
  * GET /api/scheduler/status
  * Get scheduler configuration status
  */
@@ -54,6 +80,7 @@ router.get('/status', (req, res) => {
     timezone: process.env.SCHEDULER_TIMEZONE || 'Europe/Paris',
     emailConfigured: !!(process.env.EMAIL_HOST && process.env.EMAIL_USER),
     runOnStart: process.env.SCHEDULER_RUN_ON_START === 'true',
+    blogFeedAutoSave: process.env.BLOG_FEED_AUTO_SAVE === 'true',
   };
 
   res.json({

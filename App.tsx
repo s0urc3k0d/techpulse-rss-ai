@@ -10,8 +10,10 @@ import { SearchBar } from './components/SearchBar';
 import { ExportMenu } from './components/ExportMenu';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { PodcastPrep } from './components/PodcastPrep';
+import { BlogFeedManager } from './components/BlogFeedManager';
 import { fuzzySearch, getSearchStats } from './services/searchService';
 import { handleExportCSV, handleExportJSON, handleExportMarkdown } from './services/exportService';
+import { saveArticlesForBlog } from './services/feedExportService';
 
 // Helper to format date for input type='date' (YYYY-MM-DD)
 const formatDateForInput = (date: Date) => date.toISOString().split('T')[0];
@@ -48,6 +50,11 @@ const App: React.FC = () => {
   const [showScriptModal, setShowScriptModal] = useState(false);
   const [isAutoSelecting, setIsAutoSelecting] = useState(false);
   const [autoSelectReasoning, setAutoSelectReasoning] = useState<string>('');
+  
+  // Blog feed export state
+  const [showBlogFeedManager, setShowBlogFeedManager] = useState(false);
+  const [isSavingForBlog, setIsSavingForBlog] = useState(false);
+  const [blogSaveMessage, setBlogSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Save feeds to localStorage whenever they change
   useEffect(() => {
@@ -176,6 +183,41 @@ const App: React.FC = () => {
     }
   };
 
+  // Save selected articles for blog RSS feed
+  const handleSaveForBlog = async () => {
+    if (selectedIds.size === 0) return;
+    
+    setIsSavingForBlog(true);
+    setBlogSaveMessage(null);
+    
+    const selectedArticles = articles.filter(a => selectedIds.has(a.id));
+    
+    // Create a map of podcast data if available
+    const podcastDataMap = new Map<string, PodcastScriptItem>();
+    podcastScript.forEach(item => {
+      podcastDataMap.set(item.originalId, item);
+    });
+    
+    try {
+      const result = await saveArticlesForBlog(selectedArticles, podcastDataMap);
+      setBlogSaveMessage({
+        type: 'success',
+        text: result.message
+      });
+      // Clear selection after successful save
+      setTimeout(() => {
+        setBlogSaveMessage(null);
+      }, 5000);
+    } catch (error: any) {
+      setBlogSaveMessage({
+        type: 'error',
+        text: error.message || 'Erreur lors de la sauvegarde'
+      });
+    } finally {
+      setIsSavingForBlog(false);
+    }
+  };
+
   // Filter by category, then by search query
   const filteredArticles = useMemo(() => {
     let filtered = selectedTag === 'All' ? articles : articles.filter(a => a.category === selectedTag);
@@ -243,13 +285,37 @@ const App: React.FC = () => {
             </button>
           </nav>
           
-          <div className="text-sm text-slate-400 hidden sm:block" aria-label="Informations">
-             Une application Made in SOURCEKOD
+          {/* Blog Feed Button */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowBlogFeedManager(!showBlogFeedManager)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 border ${
+                showBlogFeedManager
+                  ? 'bg-green-500/20 text-green-300 border-green-500/50'
+                  : 'bg-dark text-slate-400 border-slate-700 hover:text-green-300 hover:border-green-500/50'
+              }`}
+              title="Gérer le flux RSS pour ton blog"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z" />
+              </svg>
+              <span className="hidden md:inline">Blog RSS</span>
+            </button>
+            <div className="text-sm text-slate-400 hidden lg:block" aria-label="Informations">
+               Made in SOURCEKOD
+            </div>
           </div>
         </div>
       </header>
 
       <main id="main-content" className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        
+        {/* Blog Feed Manager Panel */}
+        {showBlogFeedManager && (
+          <div className="animate-fade-in">
+            <BlogFeedManager onClose={() => setShowBlogFeedManager(false)} />
+          </div>
+        )}
         
         {/* Podcast Prep Tab */}
         {activeTab === 'podcast-prep' && (
@@ -476,6 +542,24 @@ const App: React.FC = () => {
           >
             Annuler
           </button>
+          
+          {/* Save for Blog Button */}
+          <button 
+            onClick={handleSaveForBlog}
+            disabled={isSavingForBlog}
+            className="bg-green-600 hover:bg-green-500 text-white px-5 py-2 rounded-full text-sm font-bold shadow-lg shadow-green-500/20 transition-all flex items-center gap-2"
+            title="Sauvegarder dans le flux RSS pour ton blog"
+          >
+            {isSavingForBlog ? (
+              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z" />
+              </svg>
+            )}
+            Blog RSS
+          </button>
+          
           <button 
             onClick={handleGeneratePodcast}
             disabled={status.stage === 'generating_script'}
@@ -488,6 +572,28 @@ const App: React.FC = () => {
              )}
             Générer le Script
           </button>
+        </div>
+      )}
+      
+      {/* Blog Save Message Toast */}
+      {blogSaveMessage && (
+        <div className={`fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-xl animate-bounce-in ${
+          blogSaveMessage.type === 'success' 
+            ? 'bg-green-500/90 text-white' 
+            : 'bg-red-500/90 text-white'
+        }`}>
+          <div className="flex items-center gap-2">
+            {blogSaveMessage.type === 'success' ? (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            {blogSaveMessage.text}
+          </div>
         </div>
       )}
 

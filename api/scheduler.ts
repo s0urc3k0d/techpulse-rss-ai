@@ -7,6 +7,7 @@ import {
   generateDailyDigestEmail, 
   generateDailyDigestText 
 } from './utils/emailService.js';
+import { saveArticles, articleExists } from './utils/feedStorage.js';
 
 // Fetch RSS helper (server-side only)
 async function fetchAndParseRSS(url: string): Promise<any[]> {
@@ -143,7 +144,32 @@ const runDailyScraping = async (config: SchedulerConfig) => {
         .slice(0, 5)
     };
 
-    // 5. Send email
+    // 5. Save to Blog Feed (if enabled)
+    if (process.env.BLOG_FEED_AUTO_SAVE === 'true') {
+      console.log('📝 [Scheduler] Sauvegarde automatique dans le flux Blog...');
+      
+      // Filter out duplicates before saving
+      const newArticles = categorized.filter((a: any) => !articleExists(a.link));
+      
+      if (newArticles.length > 0) {
+        const articlesToSave = newArticles.map((a: any) => ({
+          title: a.title,
+          link: a.link,
+          description: a.description || '',
+          source: a.source,
+          pubDate: a.isoDate.toISOString(),
+          category: a.category,
+          savedBy: 'auto' as const
+        }));
+        
+        const saveResult = saveArticles(articlesToSave, 'auto');
+        console.log(`✅ [Scheduler] Blog Feed: ${saveResult.saved} articles sauvegardés, ${saveResult.duplicates} doublons ignorés`);
+      } else {
+        console.log('⚠️  [Scheduler] Blog Feed: Aucun nouvel article à sauvegarder');
+      }
+    }
+
+    // 6. Send email
     if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
       console.log('⚠️  [Scheduler] Configuration email manquante, email non envoyé.');
       console.log(`📊 [Scheduler] Stats: ${stats.totalArticles} articles, ${Object.keys(stats.byCategory).length} catégories`);
@@ -231,4 +257,99 @@ export const triggerManualScraping = async (emailTo: string): Promise<void> => {
   };
 
   await runDailyScraping(config);
+};
+
+/**
+ * Trigger blog feed update only (without email)
+ * Fetches articles, categorizes them, and saves to blog feed
+ */
+export const triggerBlogFeedUpdate = async (customFeeds?: string[]): Promise<{ saved: number; duplicates: number }> => {
+  console.log('🔄 [BlogFeed] Mise à jour manuelle du flux Blog...');
+  
+  const feeds = customFeeds || (process.env.SCHEDULER_FEEDS ? JSON.parse(process.env.SCHEDULER_FEEDS) : DEFAULT_FEEDS);
+  
+  try {
+    // 1. Fetch RSS feeds
+    console.log(`📡 [BlogFeed] Récupération de ${feeds.length} flux RSS...`);
+    const allItems: any[] = [];
+    
+    for (const feedUrl of feeds) {
+      try {
+        const items = await fetchAndParseRSS(feedUrl);
+        // Filter out already existing articles immediately
+        const newItems = items.filter((item: any) => !articleExists(item.link));
+        allItems.push(...newItems);
+        console.log(`✅ [BlogFeed] ${newItems.length} nouveaux articles depuis ${feedUrl}`);
+      } catch (error) {
+        console.error(`❌ [BlogFeed] Erreur flux ${feedUrl}:`, error);
+      }
+    }
+
+    if (allItems.length === 0) {
+      console.log('⚠️  [BlogFeed] Aucun nouvel article à traiter');
+      return { saved: 0, duplicates: 0 };
+    }
+
+    // 2. Filter articles from last 24h
+    const last24Hours = new Date();
+    last24Hours.setHours(last24Hours.getHours() - 24);
+    const recentArticles = allItems.filter(item => item.isoDate >= last24Hours);
+    
+    console.log(`📅 [BlogFeed] ${recentArticles.length} articles des dernières 24h`);
+
+    if (recentArticles.length === 0) {
+      console.log('⚠️  [BlogFeed] Aucun article récent');
+      return { saved: 0, duplicates: 0 };
+    }
+
+    // 3. Categorize with AI
+    console.log(`🤖 [BlogFeed] Catégorisation IA en cours avec ${getProviderInfo()}...`);
+    
+    const categorized: any[] = [];
+    const batchSize = 20;
+    
+    for (let i = 0; i < recentArticles.length; i += batchSize) {
+      const batch = recentArticles.slice(i, i + batchSize);
+      
+      try {
+        const categories = await categorizeForScheduler(batch);
+        
+        batch.forEach((article: any, idx: number) => {
+          categorized.push({
+            ...article,
+            category: categories[idx]?.category || 'Autre',
+            id: `${article.source}-${article.title}`.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 50)
+          });
+        });
+      } catch (error) {
+        console.error('❌ [BlogFeed] Erreur catégorisation batch:', error);
+        batch.forEach((article: any) => {
+          categorized.push({
+            ...article,
+            category: 'Autre',
+            id: `${article.source}-${article.title}`.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 50)
+          });
+        });
+      }
+    }
+
+    // 4. Save to Blog Feed
+    const articlesToSave = categorized.map((a: any) => ({
+      title: a.title,
+      link: a.link,
+      description: a.description || '',
+      source: a.source,
+      pubDate: a.isoDate.toISOString(),
+      category: a.category,
+      savedBy: 'auto' as const
+    }));
+    
+    const result = saveArticles(articlesToSave, 'auto');
+    console.log(`✅ [BlogFeed] ${result.saved} articles sauvegardés, ${result.duplicates} doublons ignorés`);
+    
+    return { saved: result.saved, duplicates: result.duplicates };
+  } catch (error) {
+    console.error('❌ [BlogFeed] Erreur lors de la mise à jour:', error);
+    throw error;
+  }
 };
