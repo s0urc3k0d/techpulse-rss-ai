@@ -289,7 +289,12 @@ export const categorizeForScheduler = async (
   const config = getProviderConfig();
   const apiKey = getApiKey(config.provider);
 
-  const prompt = `Categorize these tech articles into one of these categories: IA & ML, Dev & Tools, Cloud & DevOps, Security, Web & Frontend, Mobile, Data & Analytics, Autre.
+  const schedulerCategories = Object.values(Category);
+  const normalizeCategory = (value: string): string => {
+    return schedulerCategories.includes(value as CategoryType) ? value : Category.OTHER;
+  };
+
+  const prompt = `Categorize these tech articles into one of these categories: ${schedulerCategories.join(', ')}.
 
 ${articles.map((a, idx) => `${idx + 1}. ${a.title}`).join('\n')}
 
@@ -304,7 +309,11 @@ Return ONLY a JSON array with category for each article: [{"category":"..."}, ..
     
     const text = result.text?.replace(/```json\n?|```/g, '').trim();
     if (!text) throw new Error('No response from Gemini');
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    const entries = Array.isArray(parsed) ? parsed : (parsed.categories || parsed.classifications || []);
+    return entries.map((entry: any) => ({
+      category: normalizeCategory(entry?.category || Category.OTHER)
+    }));
   } else {
     const client = new Mistral({ apiKey });
     const response = await client.chat.complete({
@@ -320,7 +329,10 @@ Return ONLY a JSON array with category for each article: [{"category":"..."}, ..
 
     // Mistral returns object, need to handle both array and object with array
     const parsed = JSON.parse(content);
-    return Array.isArray(parsed) ? parsed : (parsed.categories || parsed.classifications || []);
+    const entries = Array.isArray(parsed) ? parsed : (parsed.categories || parsed.classifications || []);
+    return entries.map((entry: any) => ({
+      category: normalizeCategory(entry?.category || Category.OTHER)
+    }));
   }
 };
 

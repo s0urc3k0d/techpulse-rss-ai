@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
+import fs from 'fs';
 import { categorizeRouter } from './routes/categorize.js';
 import { generateScriptRouter } from './routes/generate-script.js';
 import { schedulerRouter } from './routes/scheduler.js';
@@ -51,6 +53,25 @@ app.use('/api/auto-select', autoSelectRouter);
 app.use('/api/prepare-podcast', preparePodcastRouter);
 app.use('/api/feeds', feedsRouter);
 
+// Serve frontend in production (single-container deployment)
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(process.cwd(), 'dist');
+  const indexPath = path.join(distPath, 'index.html');
+
+  if (fs.existsSync(indexPath)) {
+    app.use(express.static(distPath));
+
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        return next();
+      }
+      res.sendFile(indexPath);
+    });
+  } else {
+    console.warn(`⚠️  Frontend build not found at ${indexPath}`);
+  }
+}
+
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Error:', err);
@@ -60,13 +81,15 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`API server running on http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-  
-  // Initialize scheduler
-  initializeScheduler();
-});
+// Start server (skip in test environment)
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`API server running on http://localhost:${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/api/health`);
+    
+    // Initialize scheduler
+    initializeScheduler();
+  });
+}
 
 export default app;

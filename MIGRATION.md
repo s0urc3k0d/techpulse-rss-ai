@@ -76,7 +76,7 @@ cp .env.example .env
 ```bash
 npm run dev
 # Frontend: http://localhost:3000
-# Backend: http://localhost:3001
+# Backend: http://localhost:5555
 ```
 
 3. **Vérifier l'environnement**:
@@ -113,8 +113,8 @@ npm run check-env
 - La variable d'env s'appelle maintenant `GEMINI_API_KEY` (pas `API_KEY`)
 
 **Rétrocompatibilité**:
-- L'ancien `geminiService.ts` existe encore mais est déprécié
-- Pour supprimer complètement : `rm services/geminiService.ts`
+- Les anciens imports de `geminiService` doivent être remplacés par `apiService`
+- Le fichier legacy `services/geminiService.ts` a été supprimé
 
 ---
 

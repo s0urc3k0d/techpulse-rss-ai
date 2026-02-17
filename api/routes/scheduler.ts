@@ -1,5 +1,5 @@
 import express from 'express';
-import { triggerManualScraping, triggerBlogFeedUpdate } from '../scheduler.js';
+import { triggerManualScraping, triggerBlogFeedUpdate, triggerSaturdayPodcastDigest } from '../scheduler.js';
 
 const router = express.Router();
 
@@ -45,7 +45,7 @@ router.post('/trigger', async (req, res) => {
 
 /**
  * POST /api/scheduler/blog-feed
- * Trigger manual blog feed update (fetch, categorize, save)
+ * Trigger manual blog feed update (fetch, categorize, auto-select top N/category, save)
  */
 router.post('/blog-feed', async (req, res) => {
   try {
@@ -58,13 +58,36 @@ router.post('/blog-feed', async (req, res) => {
 
     res.json({ 
       message: 'Blog feed update triggered successfully',
-      note: 'Articles will be fetched, categorized and saved to the blog feed'
+      note: 'Articles will be fetched, categorized, auto-selected (top N/category) and saved to the blog feed'
     });
   } catch (error: any) {
     console.error('Error triggering blog feed update:', error);
     res.status(500).json({ 
       error: 'Failed to trigger blog feed update',
       message: error.message 
+    });
+  }
+});
+
+/**
+ * POST /api/scheduler/podcast-saturday
+ * Trigger manual Saturday podcast digest generation and email
+ */
+router.post('/podcast-saturday', async (req, res) => {
+  try {
+    triggerSaturdayPodcastDigest().catch(error => {
+      console.error('Error in Saturday podcast pipeline:', error);
+    });
+
+    res.json({
+      message: 'Saturday podcast digest triggered successfully',
+      note: 'The pipeline will parse internal RSS XML, select top 2 per category, enrich with Mistral and send email'
+    });
+  } catch (error: any) {
+    console.error('Error triggering Saturday podcast digest:', error);
+    res.status(500).json({
+      error: 'Failed to trigger Saturday podcast digest',
+      message: error.message
     });
   }
 });
@@ -83,10 +106,32 @@ router.get('/status', (req, res) => {
     blogFeedAutoSave: process.env.BLOG_FEED_AUTO_SAVE === 'true',
   };
 
+  const autoPipeline = {
+    enabled: process.env.AUTO_PIPELINE_ENABLED !== 'false',
+    cronExpression: process.env.AUTO_PIPELINE_CRON || '0 * * * *',
+    maxPerCategory: parseInt(process.env.AUTO_SELECT_MAX_PER_CATEGORY || '5', 10),
+    lookbackHours: parseInt(process.env.AUTO_PIPELINE_LOOKBACK_HOURS || '24', 10),
+    runOnStart: process.env.AUTO_PIPELINE_RUN_ON_START === 'true',
+    feedsConfigured: !!(process.env.AUTO_PIPELINE_FEEDS || process.env.SCHEDULER_FEEDS)
+  };
+
+  const saturdayPodcast = {
+    enabled: process.env.SATURDAY_PODCAST_ENABLED === 'true',
+    cronExpression: process.env.SATURDAY_PODCAST_CRON || '0 10 * * 6',
+    timezone: process.env.SATURDAY_PODCAST_TIMEZONE || process.env.SCHEDULER_TIMEZONE || 'Europe/Paris',
+    maxPerCategory: parseInt(process.env.SATURDAY_PODCAST_MAX_PER_CATEGORY || '2', 10),
+    runOnStart: process.env.SATURDAY_PODCAST_RUN_ON_START === 'true',
+    emailConfigured: !!(process.env.SATURDAY_PODCAST_EMAIL_TO || process.env.SCHEDULER_EMAIL_TO || process.env.EMAIL_USER)
+  };
+
   res.json({
     status: 'ok',
     scheduler: config,
-    nextRun: config.enabled ? getNextCronRun(config.cronExpression) : null
+    autoPipeline,
+    saturdayPodcast,
+    nextRun: config.enabled ? getNextCronRun(config.cronExpression) : null,
+    nextAutoPipelineRun: autoPipeline.enabled ? getNextCronRun(autoPipeline.cronExpression) : null,
+    nextSaturdayPodcastRun: saturdayPodcast.enabled ? getNextCronRun(saturdayPodcast.cronExpression) : null
   });
 });
 
@@ -94,17 +139,44 @@ router.get('/status', (req, res) => {
  * Helper to get next cron run time
  */
 function getNextCronRun(cronExpression: string): string {
-  // Simple calculation for daily 9 AM cron (0 9 * * *)
   const now = new Date();
-  const next = new Date();
-  next.setHours(9, 0, 0, 0);
-  
-  if (now.getHours() >= 9) {
-    // If past 9 AM today, schedule for tomorrow
-    next.setDate(next.getDate() + 1);
+  const parts = cronExpression.trim().split(/\s+/);
+
+  if (parts.length !== 5) {
+    return now.toISOString();
   }
-  
-  return next.toISOString();
+
+  const [minutePart, hourPart] = parts;
+
+  // Every hour at fixed minute: "m * * * *"
+  if (hourPart === '*' && /^\d+$/.test(minutePart)) {
+    const minute = parseInt(minutePart, 10);
+    const next = new Date(now);
+    next.setSeconds(0, 0);
+    next.setMinutes(minute);
+
+    if (next <= now) {
+      next.setHours(next.getHours() + 1);
+    }
+
+    return next.toISOString();
+  }
+
+  // Daily at fixed hour/minute: "m h * * *"
+  if (/^\d+$/.test(minutePart) && /^\d+$/.test(hourPart)) {
+    const minute = parseInt(minutePart, 10);
+    const hour = parseInt(hourPart, 10);
+    const next = new Date(now);
+    next.setHours(hour, minute, 0, 0);
+
+    if (next <= now) {
+      next.setDate(next.getDate() + 1);
+    }
+
+    return next.toISOString();
+  }
+
+  return now.toISOString();
 }
 
 export const schedulerRouter = router;

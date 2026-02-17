@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 
 interface SearchBarProps {
   onSearch: (query: string) => void;

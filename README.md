@@ -51,7 +51,7 @@ npm run dev
 
 This will start:
 - Frontend (Vite): http://localhost:3000
-- Backend API: http://localhost:3001
+- Backend API: http://localhost:5555
 
 ### Production Build
 
@@ -84,7 +84,8 @@ techpulse-rss-ai/
 ├── services/              # Frontend services
 │   ├── apiService.ts      # API client (NEW)
 │   ├── rssService.ts      # RSS fetching
-│   └── geminiService.ts   # (DEPRECATED - use apiService)
+│   ├── searchService.ts   # Recherche fuzzy locale
+│   └── exportService.ts   # Exports CSV/JSON/Markdown
 ├── App.tsx                # Main app component
 ├── types.ts               # TypeScript definitions
 ├── constants.ts           # App constants

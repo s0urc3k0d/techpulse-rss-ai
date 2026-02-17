@@ -99,12 +99,11 @@ export const exportPodcastScriptToMarkdown = (script: PodcastScriptItem[]): stri
   markdown += `---\n\n`;
 
   script.forEach((item, index) => {
-    markdown += `## Segment ${index + 1}: ${item.title}\n\n`;
-    markdown += `**Catégorie**: ${item.category}\n\n`;
-    markdown += `### Script\n\n${item.script}\n\n`;
-    markdown += `**Sources**:\n`;
-    item.sources.forEach(source => {
-      markdown += `- [${source}](${source})\n`;
+    markdown += `## Segment ${index + 1}: ${item.catchyTitle}\n\n`;
+    markdown += `**Article d'origine**: ${item.originalId}\n\n`;
+    markdown += `### Points clés\n\n`;
+    item.keyPoints.forEach(point => {
+      markdown += `- ${point}\n`;
     });
     markdown += `\n---\n\n`;
   });

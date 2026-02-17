@@ -74,6 +74,23 @@ SCHEDULER_RUN_ON_START=false
 
 # Flux RSS à scraper (JSON array)
 SCHEDULER_FEEDS=["https://news.ycombinator.com/rss","https://techcrunch.com/feed/"]
+
+# Pipeline automatique horaire (sans email)
+AUTO_PIPELINE_ENABLED=true
+AUTO_PIPELINE_CRON=0 * * * *
+AUTO_PIPELINE_FEEDS=["https://news.ycombinator.com/rss","https://techcrunch.com/feed/"]
+AUTO_SELECT_MAX_PER_CATEGORY=5
+AUTO_PIPELINE_LOOKBACK_HOURS=24
+AUTO_PIPELINE_RUN_ON_START=false
+
+# Pipeline podcast hebdo (samedi 10h)
+SATURDAY_PODCAST_ENABLED=true
+SATURDAY_PODCAST_CRON=0 10 * * 6
+SATURDAY_PODCAST_TIMEZONE=Europe/Paris
+SATURDAY_PODCAST_EMAIL_TO=votre_email@example.com
+SATURDAY_PODCAST_MAX_PER_CATEGORY=2
+SATURDAY_PODCAST_RUN_ON_START=false
+INTERNAL_API_BASE_URL=http://127.0.0.1:5555
 ```
 
 ### Expressions CRON
@@ -86,6 +103,12 @@ Exemples courants :
 - `0 */6 * * *` - Toutes les 6 heures
 - `0 9,18 * * *` - À 9h et 18h tous les jours
 - `0 9 * * 1` - Tous les lundis à 9h00
+
+Pour l'automatisation horaire:
+- `0 * * * *` - Toutes les heures (minute 0)
+
+Pour le podcast du samedi:
+- `0 10 * * 6` - Tous les samedis à 10h00
 
 ### Exemple de configuration complète
 
@@ -162,16 +185,44 @@ Réponse :
 
 ### Workflow automatique
 
-1. **Déclenchement** : Le scheduler s'exécute selon le CRON configuré (par défaut : 9h chaque matin)
+1. **Déclenchement** : Le scheduler digest s'exécute selon `SCHEDULER_CRON` (par défaut : 9h)
 2. **Fetch RSS** : Récupération de tous les flux RSS configurés
-3. **Filtrage** : Ne garde que les articles des dernières 24h
-4. **Catégorisation IA** : Classification automatique avec Gemini
+3. **Filtrage** : Ne garde que les articles récents
+4. **Catégorisation IA** : Classification automatique
 5. **Génération email** : Création d'un email HTML stylisé avec :
    - Statistiques (total articles, catégories, sources)
    - Articles groupés par catégorie
    - Top 5 articles par catégorie
    - Liens directs vers les articles
 6. **Envoi** : Email envoyé à l'adresse configurée
+
+### Pipeline automatique horaire (nouveau)
+
+Quand `AUTO_PIPELINE_ENABLED=true`, un job distinct s'exécute (par défaut toutes les heures) et fait:
+1. Fetch RSS depuis les feeds configurés
+2. Catégorisation IA
+3. Auto-sélection Top N par catégorie (`AUTO_SELECT_MAX_PER_CATEGORY`, défaut 5)
+4. Sauvegarde automatique des articles sélectionnés dans le flux RSS interne (`/api/feeds/all.xml`)
+
+Ce pipeline reproduit le flux manuel "analyse + top 5/catégorie + ajout au RSS".
+
+### Pipeline podcast hebdomadaire (samedi 10h)
+
+Quand `SATURDAY_PODCAST_ENABLED=true`, un job dédié s'exécute le samedi matin et fait:
+1. Lit le flux RSS XML interne (`/api/feeds/all.xml`)
+2. Filtre les articles depuis le dimanche précédent jusqu'à maintenant
+3. Sélectionne les 2 articles les plus importants par catégorie
+4. Demande à Mistral pour chaque article:
+  - un titre percutant
+  - un bullet point unique
+  - un résumé complet
+5. Envoie le récapitulatif par email (`SATURDAY_PODCAST_EMAIL_TO`)
+
+Endpoint manuel de déclenchement:
+
+```bash
+curl -X POST http://localhost:5555/api/scheduler/podcast-saturday
+```
 
 ### Template Email
 

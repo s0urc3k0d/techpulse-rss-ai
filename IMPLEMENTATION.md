@@ -154,8 +154,7 @@ Users migrating from old version need to:
 2. Run backend server (not just frontend)
 3. Update any direct imports of `geminiService` to `apiService`
 
-**Note**: Old `services/geminiService.ts` still exists but is deprecated.
-Can be safely removed: `rm services/geminiService.ts`
+**Note**: Le fichier legacy `services/geminiService.ts` a été supprimé.
 
 ---
 

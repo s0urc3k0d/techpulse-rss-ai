@@ -1,4 +1,5 @@
 import toast from 'react-hot-toast';
+import { createElement } from 'react';
 
 export interface AppError {
   message: string;
@@ -68,18 +69,22 @@ export const showError = (error: AppError | string, onRetry?: () => void) => {
   if (canRetry && onRetry) {
     toast.error(
       (t) => (
-        <div className="flex items-center gap-3">
-          <span className="flex-1">{message}</span>
-          <button
-            onClick={() => {
-              toast.dismiss(t.id);
-              onRetry();
-            }}
-            className="bg-white text-red-600 px-3 py-1 rounded font-medium text-sm hover:bg-gray-100 transition-colors"
-          >
-            Réessayer
-          </button>
-        </div>
+        createElement(
+          'div',
+          { className: 'flex items-center gap-3' },
+          createElement('span', { className: 'flex-1' }, message),
+          createElement(
+            'button',
+            {
+              onClick: () => {
+                toast.dismiss(t.id);
+                onRetry();
+              },
+              className: 'bg-white text-red-600 px-3 py-1 rounded font-medium text-sm hover:bg-gray-100 transition-colors'
+            },
+            'Réessayer'
+          )
+        )
       ),
       {
         duration: 6000,
