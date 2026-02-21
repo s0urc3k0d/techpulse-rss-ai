@@ -24,6 +24,15 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Health check (must stay outside API rate limiting for orchestrators)
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    aiProvider: getProviderInfo()
+  });
+});
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'), // 1 minute
@@ -34,15 +43,6 @@ const limiter = rateLimit({
 });
 
 app.use('/api/', limiter);
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    aiProvider: getProviderInfo()
-  });
-});
 
 // Routes
 app.use('/api/rss', rssRouter);

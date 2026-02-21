@@ -77,6 +77,28 @@ interface SaturdayPodcastConfig {
   internalApiBaseUrl: string;
 }
 
+const STARTUP_WARMUP_SECONDS = Math.max(0, parseInt(process.env.SCHEDULER_STARTUP_WARMUP_SECONDS || (process.env.NODE_ENV === 'production' ? '45' : '5'), 10));
+
+const scheduleRunOnStart = (label: string, job: () => void, additionalDelayMs = 0) => {
+  const delayMs = (STARTUP_WARMUP_SECONDS * 1000) + additionalDelayMs;
+  console.log(`⏳ [${label}] Exécution différée au démarrage dans ${Math.round(delayMs / 1000)}s`);
+  setTimeout(job, delayMs);
+};
+
+const logSmtpError = (scope: string, error: any) => {
+  const code = error?.code || 'UNKNOWN';
+  const response = error?.response || error?.message || 'No response';
+  const isAuthError = code === 'EAUTH' || String(response).includes('535');
+
+  if (isAuthError) {
+    console.error(`❌ [${scope}] SMTP auth échouée (${code}): ${response}`);
+    console.error(`🛠️  [${scope}] Vérifie EMAIL_HOST/EMAIL_PORT/EMAIL_USER/EMAIL_PASS/EMAIL_SECURE (mot de passe applicatif si Gmail/Office365).`);
+    return;
+  }
+
+  console.error(`❌ [${scope}] Erreur email (${code}): ${response}`);
+};
+
 interface InternalRssArticle {
   id: string;
   title: string;
@@ -510,14 +532,18 @@ const runSaturdayPodcastPipeline = async (config: SaturdayPodcastConfig): Promis
       generatedAt: now,
     });
 
-    await sendEmail(transporter, {
-      to: config.emailTo,
-      subject: `🎙️ TechPulse Podcast Samedi - ${now.toLocaleDateString('fr-FR')}`,
-      html,
-      text,
-    });
+    try {
+      await sendEmail(transporter, {
+        to: config.emailTo,
+        subject: `🎙️ TechPulse Podcast Samedi - ${now.toLocaleDateString('fr-FR')}`,
+        html,
+        text,
+      });
 
-    console.log(`✅ [SaturdayPodcast] Email envoyé avec ${preparedItems.length} sujets`);
+      console.log(`✅ [SaturdayPodcast] Email envoyé avec ${preparedItems.length} sujets`);
+    } catch (error) {
+      logSmtpError('SaturdayPodcast', error);
+    }
   } catch (error) {
     console.error('❌ [SaturdayPodcast] Erreur pipeline:', error);
   }
@@ -658,14 +684,18 @@ const runDailyScraping = async (config: SchedulerConfig) => {
     const emailHtml = generateDailyDigestEmail(categorized, stats);
     const emailText = generateDailyDigestText(categorized, stats);
 
-    await sendEmail(transporter, {
-      to: config.emailTo,
-      subject: `📰 TechPulse AI - Digest du ${new Date().toLocaleDateString('fr-FR')}`,
-      html: emailHtml,
-      text: emailText,
-    });
+    try {
+      await sendEmail(transporter, {
+        to: config.emailTo,
+        subject: `📰 TechPulse AI - Digest du ${new Date().toLocaleDateString('fr-FR')}`,
+        html: emailHtml,
+        text: emailText,
+      });
 
-    console.log('✅ [Scheduler] Email envoyé avec succès!');
+      console.log('✅ [Scheduler] Email envoyé avec succès!');
+    } catch (error) {
+      logSmtpError('Scheduler', error);
+    }
   } catch (error) {
     console.error('❌ [Scheduler] Erreur lors du scraping quotidien:', error);
   }
@@ -716,8 +746,8 @@ export const initializeScheduler = () => {
     });
 
     if (process.env.SCHEDULER_RUN_ON_START === 'true') {
-      console.log('🔄 [Scheduler] Exécution immédiate au démarrage...');
-      setTimeout(() => runDailyScraping(config), 5000);
+      console.log('🔄 [Scheduler] Run-on-start activé');
+      scheduleRunOnStart('Scheduler', () => runDailyScraping(config), 1000);
     }
   } else if (config.enabled && !config.emailTo) {
     console.warn('⚠️  [Scheduler] SCHEDULER_ENABLED=true mais SCHEDULER_EMAIL_TO absent: digest email désactivé');
@@ -742,15 +772,15 @@ export const initializeScheduler = () => {
     });
 
     if (autoPipelineConfig.runOnStart) {
-      console.log('🔄 [AutoPipeline] Exécution immédiate au démarrage...');
-      setTimeout(() => {
+      console.log('🔄 [AutoPipeline] Run-on-start activé');
+      scheduleRunOnStart('AutoPipeline', () => {
         runAutomatedBlogFeedPipeline(
           autoPipelineConfig.feeds,
           autoPipelineConfig.maxPerCategory,
           autoPipelineConfig.lookbackHours,
           'AutoPipeline'
         );
-      }, 6000);
+      }, 4000);
     }
   } else {
     console.log('⏸️  [AutoPipeline] Désactivé (AUTO_PIPELINE_ENABLED=false)');
@@ -768,8 +798,8 @@ export const initializeScheduler = () => {
     });
 
     if (saturdayPodcastConfig.runOnStart) {
-      console.log('🔄 [SaturdayPodcast] Exécution immédiate au démarrage...');
-      setTimeout(() => runSaturdayPodcastPipeline(saturdayPodcastConfig), 7000);
+      console.log('🔄 [SaturdayPodcast] Run-on-start activé');
+      scheduleRunOnStart('SaturdayPodcast', () => runSaturdayPodcastPipeline(saturdayPodcastConfig), 7000);
     }
   } else {
     console.log('⏸️  [SaturdayPodcast] Désactivé (SATURDAY_PODCAST_ENABLED=false)');

@@ -21,6 +21,7 @@ Variables critiques:
 - `MISTRAL_API_KEY`
 - `EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`
 - `SATURDAY_PODCAST_EMAIL_TO`
+- `SCHEDULER_STARTUP_WARMUP_SECONDS` (recommandé: `45` en prod si run-on-start activé)
 
 ## 3) Créer une app Compose dans Coolify
 1. Coolify → **New Resource** → **Application**
@@ -63,6 +64,14 @@ Ce volume conserve:
    - `https://APP_DOMAIN/api/health`
    - `https://APP_DOMAIN/api/scheduler/status`
 
+## 7.1) Gateway timeout au démarrage
+Si vous activez `*_RUN_ON_START=true` sur plusieurs pipelines, le démarrage peut être lourd (fetch RSS + IA + email), ce qui peut provoquer des timeouts côté gateway/proxy.
+
+Actions recommandées:
+- Garder `AUTO_PIPELINE_RUN_ON_START=false` et `SATURDAY_PODCAST_RUN_ON_START=false` en prod (préféré)
+- Ou définir `SCHEDULER_STARTUP_WARMUP_SECONDS=45` (ou `60`) pour retarder les jobs de boot
+- Vérifier que `/api/health` répond rapidement juste après le démarrage du conteneur
+
 ## 8) Vérifier les pipelines
 - Horaire: `AUTO_PIPELINE_ENABLED=true`, `AUTO_PIPELINE_CRON=0 * * * *`
 - Podcast samedi: `SATURDAY_PODCAST_ENABLED=true`, `SATURDAY_PODCAST_CRON=0 10 * * 6`
@@ -83,6 +92,14 @@ Si vous voyez `EACCES: permission denied, mkdir '/app/data/current'`:
 - Si votre instance Coolify gère déjà le routage via UI, gardez les labels compose cohérents avec votre setup.
 - Si nécessaire, adaptez `PROXY_NETWORK`.
 - En cas de conflit de routage, retirez les labels Traefik et configurez le domaine dans l’UI Coolify uniquement.
+
+## 9.1) SMTP 535 Authentication failed
+Si vous voyez `Invalid login: 535 5.7.1 Authentication failed`:
+- Vérifiez `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_SECURE`
+- Vérifiez `EMAIL_USER` et `EMAIL_PASS`
+- Gmail/Google Workspace: utilisez un mot de passe d’application (pas le mot de passe principal)
+- Office365/Outlook: utiliser SMTP Auth activé côté tenant/boîte
+- Testez les credentials SMTP hors app avant redéploiement
 
 ## 10) Checklist finale
 - [ ] DNS OK
