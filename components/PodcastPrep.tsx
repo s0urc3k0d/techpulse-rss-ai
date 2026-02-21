@@ -23,6 +23,7 @@ export const PodcastPrep: React.FC = () => {
   const [xmlImportUrl, setXmlImportUrl] = useState('');
   const [isImportingXml, setIsImportingXml] = useState(false);
   const [xmlImportMessage, setXmlImportMessage] = useState('');
+  const [jsonFileName, setJsonFileName] = useState('');
 
   const handleTriggerSaturdayDigest = async () => {
     setIsTriggeringSaturdayDigest(true);
@@ -111,6 +112,41 @@ export const PodcastPrep: React.FC = () => {
     }
   };
 
+  const handleImportJsonFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setJsonFileName(file.name);
+    setIsImportingXml(true);
+    setXmlImportMessage('');
+    setError('');
+
+    try {
+      const jsonText = await file.text();
+
+      try {
+        JSON.parse(jsonText);
+      } catch {
+        throw new Error('Le fichier sélectionné ne contient pas un JSON valide');
+      }
+
+      const response = await importLegacyXmlFeed({
+        jsonContent: jsonText,
+        sourceFormat: 'json',
+        savedBy: 'manual',
+      });
+
+      setXmlImportMessage(
+        `Import ${response.format?.toUpperCase() || 'JSON'} terminé : ${response.saved} ajouté(s), ${response.duplicates} doublon(s) sur ${response.imported} article(s).`
+      );
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de l'import du fichier JSON");
+    } finally {
+      setIsImportingXml(false);
+      event.target.value = '';
+    }
+  };
+
   const copyAllToClipboard = () => {
     const text = results
       .filter(r => !r.error)
@@ -186,7 +222,7 @@ ${article.summary}
         </div>
 
         <div className="mb-4 rounded-lg border border-slate-700 bg-dark/40 p-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
             <input
               type="url"
               value={xmlImportUrl}
@@ -206,7 +242,26 @@ ${article.summary}
             >
               {isImportingXml ? 'Import...' : 'Importer XML'}
             </button>
+            <label
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
+                isImportingXml
+                  ? 'bg-slate-600 text-slate-300 cursor-not-allowed pointer-events-none'
+                  : 'bg-violet-600 hover:bg-violet-500 text-white'
+              }`}
+            >
+              Importer fichier JSON
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={handleImportJsonFile}
+                disabled={isImportingXml}
+                className="hidden"
+              />
+            </label>
           </div>
+          {jsonFileName && (
+            <p className="mt-2 text-xs text-slate-400">Fichier sélectionné : {jsonFileName}</p>
+          )}
           {xmlImportMessage && (
             <p className="mt-2 text-sm text-emerald-300">{xmlImportMessage}</p>
           )}

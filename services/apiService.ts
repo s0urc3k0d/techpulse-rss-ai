@@ -166,6 +166,7 @@ interface ImportXmlResponse {
   saved: number;
   duplicates: number;
   total: number;
+  format?: 'xml' | 'json';
   feedUrl: string;
 }
 
@@ -235,6 +236,9 @@ export const triggerSaturdayPodcastDigest = async (): Promise<SchedulerTriggerRe
 export const importLegacyXmlFeed = async (payload: {
   xmlUrl?: string;
   xmlContent?: string;
+  jsonUrl?: string;
+  jsonContent?: string;
+  sourceFormat?: 'xml' | 'json';
   savedBy?: 'manual' | 'auto';
 }): Promise<ImportXmlResponse> => {
   const response = await fetch(`${API_BASE_URL}/feeds/import-xml`, {

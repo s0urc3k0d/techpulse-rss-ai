@@ -65,6 +65,51 @@ const parseImportedXmlItems = (xmlString: string) => {
     .filter((item: any) => item.title && item.link);
 };
 
+const parseImportedJsonItems = (jsonValue: any) => {
+  const potentialArrays = [
+    jsonValue,
+    jsonValue?.items,
+    jsonValue?.articles,
+    jsonValue?.entries,
+    jsonValue?.data,
+    jsonValue?.feed?.items,
+    jsonValue?.feed?.entries,
+  ];
+
+  const items = potentialArrays.find(Array.isArray) || [];
+
+  return items
+    .filter(Boolean)
+    .map((item: any) => {
+      const title = item.title || item.catchyTitle || item.headline || 'Sans titre';
+      const link = item.link || item.url || item.guid || '';
+      const description = item.description || item.summary || item.content || '';
+      const source = item.source || item.sourceName || item.publisher || 'Imported JSON';
+      const category = item.category || item.topic || item.tag || 'Autre';
+      const pubDate = item.pubDate || item.publishedAt || item.published || item.date || item.isoDate || new Date().toISOString();
+
+      return {
+        title: String(title).trim(),
+        link: String(link).trim(),
+        description: String(description).trim(),
+        source: String(source).trim(),
+        pubDate: new Date(pubDate).toISOString(),
+        category: String(category).trim() || 'Autre',
+        summary: item.summary ? String(item.summary).trim() : undefined,
+        keyPoints: Array.isArray(item.keyPoints)
+          ? item.keyPoints.map((k: any) => String(k)).filter(Boolean)
+          : undefined,
+        catchyTitle: item.catchyTitle ? String(item.catchyTitle).trim() : undefined,
+      };
+    })
+    .filter((item: any) => item.title && item.link);
+};
+
+const isLikelyJsonString = (content: string): boolean => {
+  const trimmed = content.trim();
+  return trimmed.startsWith('{') || trimmed.startsWith('[');
+};
+
 /**
  * Génère le XML RSS 2.0 à partir des articles
  */
@@ -442,33 +487,58 @@ router.post('/save', (req, res) => {
  */
 router.post('/import-xml', async (req, res) => {
   try {
-    const { xmlContent, xmlUrl, savedBy = 'manual' } = req.body;
+    const {
+      xmlContent,
+      xmlUrl,
+      jsonContent,
+      jsonUrl,
+      sourceFormat,
+      savedBy = 'manual'
+    } = req.body;
 
-    let content: string = xmlContent;
-    if (!content && xmlUrl) {
-      const response = await fetch(xmlUrl);
+    let content: string = xmlContent || jsonContent;
+    let detectedFormat: 'xml' | 'json' = sourceFormat === 'json' ? 'json' : 'xml';
+
+    const remoteUrl = xmlUrl || jsonUrl;
+
+    if (!content && remoteUrl) {
+      const response = await fetch(remoteUrl);
       if (!response.ok) {
-        return res.status(400).json({ error: `Unable to fetch xmlUrl: HTTP ${response.status}` });
+        return res.status(400).json({ error: `Unable to fetch source URL: HTTP ${response.status}` });
       }
+      const contentType = response.headers.get('content-type') || '';
       content = await response.text();
+      if (contentType.includes('application/json') || isLikelyJsonString(content)) {
+        detectedFormat = 'json';
+      }
     }
 
     if (!content || typeof content !== 'string') {
       return res.status(400).json({
-        error: 'xmlContent (string) or xmlUrl is required',
+        error: 'xmlContent/xmlUrl or jsonContent/jsonUrl is required',
         example: {
           xmlContent: '<?xml version="1.0"...>',
-          xmlUrl: 'https://example.com/old-feed.xml'
+          xmlUrl: 'https://example.com/old-feed.xml',
+          jsonContent: '{"items":[...]}'
         }
       });
     }
 
-    const importedArticles = parseImportedXmlItems(content).map(article => ({
+    if (!sourceFormat && !remoteUrl && isLikelyJsonString(content)) {
+      detectedFormat = 'json';
+    }
+
+    const parsedItems = detectedFormat === 'json'
+      ? parseImportedJsonItems(JSON.parse(content))
+      : parseImportedXmlItems(content);
+
+    const importedArticles = parsedItems.map(article => ({
       ...article,
       savedBy: savedBy === 'auto' ? 'auto' as const : 'manual' as const
     }));
+
     if (importedArticles.length === 0) {
-      return res.status(400).json({ error: 'No valid items found in XML feed' });
+      return res.status(400).json({ error: `No valid items found in ${detectedFormat.toUpperCase()} source` });
     }
 
     const result = saveArticles(importedArticles, savedBy === 'auto' ? 'auto' : 'manual');
@@ -479,11 +549,12 @@ router.post('/import-xml', async (req, res) => {
       saved: result.saved,
       duplicates: result.duplicates,
       total: result.total,
+      format: detectedFormat,
       feedUrl: '/api/feeds/all.xml'
     });
   } catch (error: any) {
     console.error('Erreur import XML:', error);
-    res.status(500).json({ error: error.message || 'XML import failed' });
+    res.status(500).json({ error: error.message || 'Feed import failed' });
   }
 });
 
