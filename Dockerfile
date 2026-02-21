@@ -3,16 +3,17 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 FROM deps AS builder
 WORKDIR /app
 COPY . .
 RUN npm run build && npm run build:server && mkdir -p /app/data
 
-FROM deps AS prod-deps
+FROM node:22-alpine AS prod-deps
 WORKDIR /app
-RUN npm prune --omit=dev && npm cache clean --force
+COPY package*.json ./
+RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 
 FROM gcr.io/distroless/nodejs22-debian12:nonroot AS runtime
 WORKDIR /app
