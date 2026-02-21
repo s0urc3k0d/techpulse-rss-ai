@@ -103,6 +103,7 @@ Si vous voyez `EACCES: permission denied, mkdir '/app/data/current'`:
 Si vous voyez `Invalid login: 535 5.7.1 Authentication failed`:
 - Vérifiez `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_SECURE`
 - Vérifiez `EMAIL_USER` et `EMAIL_PASS`
+- Essayez `EMAIL_AUTH_METHOD=LOGIN` si votre SMTP refuse `AUTH PLAIN`
 - Gmail/Google Workspace: utilisez un mot de passe d’application (pas le mot de passe principal)
 - Office365/Outlook: utiliser SMTP Auth activé côté tenant/boîte
 - Testez les credentials SMTP hors app avant redéploiement

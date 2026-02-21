@@ -75,13 +75,16 @@ router.post('/blog-feed', async (req, res) => {
  */
 router.post('/podcast-saturday', async (req, res) => {
   try {
-    triggerSaturdayPodcastDigest().catch(error => {
-      console.error('Error in Saturday podcast pipeline:', error);
-    });
+    const result = await triggerSaturdayPodcastDigest();
 
     res.json({
-      message: 'Saturday podcast digest triggered successfully',
-      note: 'The pipeline will parse internal RSS XML, select top 2 per category, enrich with Mistral and send email'
+      message: result.success
+        ? 'Saturday podcast digest terminé'
+        : 'Saturday podcast digest terminé avec avertissements',
+      note: result.emailSent
+        ? 'Email envoyé avec succès'
+        : 'Email non envoyé (voir détails)',
+      result
     });
   } catch (error: any) {
     console.error('Error triggering Saturday podcast digest:', error);

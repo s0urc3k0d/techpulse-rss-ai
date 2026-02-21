@@ -20,6 +20,29 @@ export const PodcastPrep: React.FC = () => {
   const [progress, setProgress] = useState<string>('');
   const [isTriggeringSaturdayDigest, setIsTriggeringSaturdayDigest] = useState(false);
   const [saturdayDigestMessage, setSaturdayDigestMessage] = useState<string>('');
+  const [saturdayDigestResult, setSaturdayDigestResult] = useState<{
+    success: boolean;
+    windowStart: string;
+    generatedAt: string;
+    candidateArticles: number;
+    selectedArticles: number;
+    preparedItems: number;
+    fallbackItems: number;
+    items: Array<{
+      category: string;
+      originalTitle: string;
+      catchyTitle: string;
+      bulletPoint: string;
+      fullSummary: string;
+      link: string;
+      source: string;
+    }>;
+    emailSent: boolean;
+    emailTo: string;
+    selectionReasoning?: string;
+    note?: string;
+    error?: string;
+  } | null>(null);
   const [xmlImportUrl, setXmlImportUrl] = useState('');
   const [isImportingXml, setIsImportingXml] = useState(false);
   const [xmlImportMessage, setXmlImportMessage] = useState('');
@@ -28,11 +51,13 @@ export const PodcastPrep: React.FC = () => {
   const handleTriggerSaturdayDigest = async () => {
     setIsTriggeringSaturdayDigest(true);
     setSaturdayDigestMessage('');
+    setSaturdayDigestResult(null);
     setError('');
 
     try {
       const response = await triggerSaturdayPodcastDigest();
       setSaturdayDigestMessage(response.note || response.message || 'Récap du samedi déclenché.');
+      setSaturdayDigestResult(response.result || null);
     } catch (err: any) {
       setError(err.message || 'Erreur lors du déclenchement du récap du samedi');
     } finally {
@@ -220,6 +245,86 @@ ${article.summary}
             <span className="text-sm text-emerald-300">{saturdayDigestMessage}</span>
           )}
         </div>
+
+        {saturdayDigestResult && (
+          <div className="mb-4 rounded-lg border border-slate-700 bg-dark/40 p-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+                saturdayDigestResult.emailSent
+                  ? 'bg-emerald-900/40 text-emerald-300'
+                  : 'bg-amber-900/40 text-amber-300'
+              }`}>
+                {saturdayDigestResult.emailSent ? 'Email envoyé' : 'Email non envoyé'}
+              </span>
+              <span className="text-slate-400">
+                {new Date(saturdayDigestResult.generatedAt).toLocaleString('fr-FR')}
+              </span>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded border border-slate-700 px-3 py-2 text-slate-300">Trouvés: <strong>{saturdayDigestResult.candidateArticles}</strong></div>
+              <div className="rounded border border-slate-700 px-3 py-2 text-slate-300">Sélectionnés: <strong>{saturdayDigestResult.selectedArticles}</strong></div>
+              <div className="rounded border border-slate-700 px-3 py-2 text-slate-300">Préparés: <strong>{saturdayDigestResult.preparedItems}</strong></div>
+              <div className="rounded border border-slate-700 px-3 py-2 text-slate-300">Fallback IA: <strong>{saturdayDigestResult.fallbackItems}</strong></div>
+            </div>
+
+            <p className="mt-2 text-slate-400">
+              Destinataire: {saturdayDigestResult.emailTo || 'non défini'}
+            </p>
+
+            {saturdayDigestResult.note && (
+              <p className="mt-1 text-slate-400">Note: {saturdayDigestResult.note}</p>
+            )}
+
+            {saturdayDigestResult.error && (
+              <p className="mt-2 text-red-300">Erreur: {saturdayDigestResult.error}</p>
+            )}
+
+            {saturdayDigestResult.selectionReasoning && (
+              <p className="mt-2 text-slate-400">
+                Raisonnement IA: {saturdayDigestResult.selectionReasoning}
+              </p>
+            )}
+
+            {saturdayDigestResult.items.length > 0 && (
+              <div className="mt-4 space-y-4">
+                <h4 className="text-sm font-semibold text-slate-200">
+                  Contenu du récap (équivalent email)
+                </h4>
+                {Object.entries(
+                  saturdayDigestResult.items.reduce((acc, item) => {
+                    if (!acc[item.category]) acc[item.category] = [] as typeof saturdayDigestResult.items;
+                    acc[item.category].push(item);
+                    return acc;
+                  }, {} as Record<string, typeof saturdayDigestResult.items>)
+                ).map(([category, items]) => (
+                  <div key={category} className="rounded border border-slate-700 p-3">
+                    <p className="mb-2 text-sm font-semibold text-primary">{category} ({items.length})</p>
+                    <div className="space-y-3">
+                      {items.map((item, index) => (
+                        <div key={`${category}-${index}`} className="rounded bg-slate-900/40 p-3">
+                          <p className="text-xs text-slate-400">Sujet {index + 1} • {item.source}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-100">{item.catchyTitle}</p>
+                          <p className="mt-1 text-xs text-slate-400">Titre original: {item.originalTitle}</p>
+                          <p className="mt-2 text-sm text-slate-300"><strong>Point clé:</strong> {item.bulletPoint}</p>
+                          <p className="mt-2 text-sm text-slate-300">{item.fullSummary}</p>
+                          <a
+                            href={item.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-block text-sm text-blue-400 hover:text-blue-300 hover:underline"
+                          >
+                            Lire la source →
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mb-4 rounded-lg border border-slate-700 bg-dark/40 p-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">

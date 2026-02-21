@@ -8,7 +8,8 @@ import {
   generateDailyDigestText,
   generateSaturdayPodcastEmail,
   generateSaturdayPodcastText,
-  type PodcastPrepEmailItem
+  type PodcastPrepEmailItem,
+  type EmailConfig
 } from './utils/emailService.js';
 import { saveArticles, articleExists, archivePreviousMonth } from './utils/feedStorage.js';
 
@@ -99,6 +100,29 @@ const logSmtpError = (scope: string, error: any) => {
   console.error(`❌ [${scope}] Erreur email (${code}): ${response}`);
 };
 
+const getSmtpConfig = (): EmailConfig | null => {
+  const host = (process.env.EMAIL_HOST || '').trim();
+  const user = (process.env.EMAIL_USER || '').trim();
+  const pass = (process.env.EMAIL_PASS || '').trim();
+
+  if (!host || !user || !pass) {
+    return null;
+  }
+
+  const authMethod = (process.env.EMAIL_AUTH_METHOD || '').trim();
+
+  return {
+    host,
+    port: parseInt((process.env.EMAIL_PORT || '587').trim(), 10),
+    secure: (process.env.EMAIL_SECURE || 'false').trim().toLowerCase() === 'true',
+    ...(authMethod ? { authMethod } : {}),
+    auth: {
+      user,
+      pass,
+    },
+  };
+};
+
 interface InternalRssArticle {
   id: string;
   title: string;
@@ -107,6 +131,22 @@ interface InternalRssArticle {
   source: string;
   link: string;
   isoDate: Date;
+}
+
+export interface SaturdayPodcastRunResult {
+  success: boolean;
+  windowStart: string;
+  generatedAt: string;
+  candidateArticles: number;
+  selectedArticles: number;
+  preparedItems: number;
+  fallbackItems: number;
+  items: PodcastPrepEmailItem[];
+  emailSent: boolean;
+  emailTo: string;
+  selectionReasoning?: string;
+  note?: string;
+  error?: string;
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -304,8 +344,8 @@ const buildFallbackPodcastItem = (article: InternalRssArticle): PodcastPrepEmail
   };
 };
 
-const enrichArticlesBatchForPodcast = async (articles: InternalRssArticle[]): Promise<PodcastPrepEmailItem[]> => {
-  if (articles.length === 0) return [];
+const enrichArticlesBatchForPodcast = async (articles: InternalRssArticle[]): Promise<{ items: PodcastPrepEmailItem[]; fallbackCount: number }> => {
+  if (articles.length === 0) return { items: [], fallbackCount: 0 };
 
   const maxRetries = Math.max(0, parseInt(process.env.SATURDAY_PODCAST_ENRICH_MAX_RETRIES || '2', 10));
   const baseDelayMs = Math.max(500, parseInt(process.env.SATURDAY_PODCAST_ENRICH_RETRY_DELAY_MS || '3000', 10));
@@ -313,7 +353,9 @@ const enrichArticlesBatchForPodcast = async (articles: InternalRssArticle[]): Pr
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const enrichedById = await enrichArticlesBatchWithMistral(articles);
-      return articles.map(article => enrichedById.get(article.id) || buildFallbackPodcastItem(article));
+      const items = articles.map(article => enrichedById.get(article.id) || buildFallbackPodcastItem(article));
+      const fallbackCount = articles.filter(article => !enrichedById.has(article.id)).length;
+      return { items, fallbackCount };
     } catch (error: any) {
       const isLastAttempt = attempt >= maxRetries;
 
@@ -325,11 +367,17 @@ const enrichArticlesBatchForPodcast = async (articles: InternalRssArticle[]): Pr
       }
 
       console.warn(`⚠️  [SaturdayPodcast] Fallback sans IA pour un batch de ${articles.length} article(s) (${isRateLimitError(error) ? 'rate-limit' : 'erreur enrichissement'})`);
-      return articles.map(article => buildFallbackPodcastItem(article));
+      return {
+        items: articles.map(article => buildFallbackPodcastItem(article)),
+        fallbackCount: articles.length,
+      };
     }
   }
 
-  return articles.map(article => buildFallbackPodcastItem(article));
+  return {
+    items: articles.map(article => buildFallbackPodcastItem(article)),
+    fallbackCount: articles.length,
+  };
 };
 
 const selectTopArticlesByCategory = async (
@@ -554,22 +602,47 @@ const runAutomatedBlogFeedPipeline = async (
   };
 };
 
-const runSaturdayPodcastPipeline = async (config: SaturdayPodcastConfig): Promise<void> => {
+const runSaturdayPodcastPipeline = async (config: SaturdayPodcastConfig): Promise<SaturdayPodcastRunResult> => {
   console.log('🎙️ [SaturdayPodcast] Démarrage du pipeline podcast hebdomadaire...');
 
   try {
-    if (!config.emailTo) {
-      console.warn('⚠️  [SaturdayPodcast] Adresse email manquante, abandon');
-      return;
-    }
-
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.warn('⚠️  [SaturdayPodcast] Configuration SMTP manquante, abandon');
-      return;
-    }
-
     const now = new Date();
     const windowStart = getPreviousSundayStart(now);
+
+    if (!config.emailTo) {
+      console.warn('⚠️  [SaturdayPodcast] Adresse email manquante, abandon');
+      return {
+        success: false,
+        windowStart: windowStart.toISOString(),
+        generatedAt: now.toISOString(),
+        candidateArticles: 0,
+        selectedArticles: 0,
+        preparedItems: 0,
+        fallbackItems: 0,
+        items: [],
+        emailSent: false,
+        emailTo: config.emailTo,
+        note: 'Adresse email manquante',
+      };
+    }
+
+    const smtpConfig = getSmtpConfig();
+    if (!smtpConfig) {
+      console.warn('⚠️  [SaturdayPodcast] Configuration SMTP manquante, abandon');
+      return {
+        success: false,
+        windowStart: windowStart.toISOString(),
+        generatedAt: now.toISOString(),
+        candidateArticles: 0,
+        selectedArticles: 0,
+        preparedItems: 0,
+        fallbackItems: 0,
+        items: [],
+        emailSent: false,
+        emailTo: config.emailTo,
+        note: 'Configuration SMTP manquante',
+      };
+    }
 
     const rssArticles = await fetchInternalRssArticles(config.internalApiBaseUrl);
     const candidateArticles = rssArticles.filter(article => article.isoDate >= windowStart && article.isoDate <= now);
@@ -578,7 +651,19 @@ const runSaturdayPodcastPipeline = async (config: SaturdayPodcastConfig): Promis
 
     if (candidateArticles.length === 0) {
       console.log('⚠️  [SaturdayPodcast] Aucun article sur la période, email non envoyé');
-      return;
+      return {
+        success: true,
+        windowStart: windowStart.toISOString(),
+        generatedAt: now.toISOString(),
+        candidateArticles: 0,
+        selectedArticles: 0,
+        preparedItems: 0,
+        fallbackItems: 0,
+        items: [],
+        emailSent: false,
+        emailTo: config.emailTo,
+        note: 'Aucun article sur la période',
+      };
     }
 
     const selection = await selectTopArticlesByCategory(candidateArticles, config.maxPerCategory);
@@ -586,12 +671,26 @@ const runSaturdayPodcastPipeline = async (config: SaturdayPodcastConfig): Promis
 
     if (selectedArticles.length === 0) {
       console.log('⚠️  [SaturdayPodcast] Aucun article sélectionné, email non envoyé');
-      return;
+      return {
+        success: true,
+        windowStart: windowStart.toISOString(),
+        generatedAt: now.toISOString(),
+        candidateArticles: candidateArticles.length,
+        selectedArticles: 0,
+        preparedItems: 0,
+        fallbackItems: 0,
+        items: [],
+        emailSent: false,
+        emailTo: config.emailTo,
+        selectionReasoning: selection.reasoning,
+        note: 'Aucun article sélectionné',
+      };
     }
 
     console.log(`🎯 [SaturdayPodcast] ${selectedArticles.length} articles sélectionnés (${selection.reasoning})`);
 
     const preparedItems: PodcastPrepEmailItem[] = [];
+    let fallbackItems = 0;
     const enrichmentDelayMs = Math.max(250, parseInt(process.env.SATURDAY_PODCAST_ENRICH_DELAY_MS || '1200', 10));
     const requestedBatchSize = Math.max(1, parseInt(process.env.SATURDAY_PODCAST_ENRICH_BATCH_SIZE || '4', 10));
     const batchSize = Math.min(20, requestedBatchSize);
@@ -605,24 +704,30 @@ const runSaturdayPodcastPipeline = async (config: SaturdayPodcastConfig): Promis
     for (let i = 0; i < selectedArticles.length; i += batchSize) {
       const batch = selectedArticles.slice(i, i + batchSize);
       const enrichedBatch = await enrichArticlesBatchForPodcast(batch);
-      preparedItems.push(...enrichedBatch);
+      preparedItems.push(...enrichedBatch.items);
+      fallbackItems += enrichedBatch.fallbackCount;
       await sleep(enrichmentDelayMs);
     }
 
     if (preparedItems.length === 0) {
       console.log('⚠️  [SaturdayPodcast] Aucun contenu enrichi, email non envoyé');
-      return;
+      return {
+        success: false,
+        windowStart: windowStart.toISOString(),
+        generatedAt: now.toISOString(),
+        candidateArticles: candidateArticles.length,
+        selectedArticles: selectedArticles.length,
+        preparedItems: 0,
+        fallbackItems,
+        items: [],
+        emailSent: false,
+        emailTo: config.emailTo,
+        selectionReasoning: selection.reasoning,
+        note: 'Aucun contenu préparé',
+      };
     }
 
-    const transporter = createEmailTransporter({
-      host: process.env.EMAIL_HOST,
-      port: parseInt(process.env.EMAIL_PORT || '587'),
-      secure: process.env.EMAIL_SECURE === 'true',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+    const transporter = createEmailTransporter(smtpConfig);
 
     const html = generateSaturdayPodcastEmail(preparedItems, {
       windowStart,
@@ -642,11 +747,51 @@ const runSaturdayPodcastPipeline = async (config: SaturdayPodcastConfig): Promis
       });
 
       console.log(`✅ [SaturdayPodcast] Email envoyé avec ${preparedItems.length} sujets`);
+      return {
+        success: true,
+        windowStart: windowStart.toISOString(),
+        generatedAt: now.toISOString(),
+        candidateArticles: candidateArticles.length,
+        selectedArticles: selectedArticles.length,
+        preparedItems: preparedItems.length,
+        fallbackItems,
+        items: preparedItems,
+        emailSent: true,
+        emailTo: config.emailTo,
+        selectionReasoning: selection.reasoning,
+      };
     } catch (error) {
       logSmtpError('SaturdayPodcast', error);
+      return {
+        success: false,
+        windowStart: windowStart.toISOString(),
+        generatedAt: now.toISOString(),
+        candidateArticles: candidateArticles.length,
+        selectedArticles: selectedArticles.length,
+        preparedItems: preparedItems.length,
+        fallbackItems,
+        items: preparedItems,
+        emailSent: false,
+        emailTo: config.emailTo,
+        selectionReasoning: selection.reasoning,
+        error: error instanceof Error ? error.message : 'SMTP error',
+      };
     }
   } catch (error) {
     console.error('❌ [SaturdayPodcast] Erreur pipeline:', error);
+    return {
+      success: false,
+      windowStart: new Date().toISOString(),
+      generatedAt: new Date().toISOString(),
+      candidateArticles: 0,
+      selectedArticles: 0,
+      preparedItems: 0,
+      fallbackItems: 0,
+      items: [],
+      emailSent: false,
+      emailTo: config.emailTo,
+      error: error instanceof Error ? error.message : 'Saturday podcast pipeline failed',
+    };
   }
 };
 
@@ -766,21 +911,14 @@ const runDailyScraping = async (config: SchedulerConfig) => {
     }
 
     // 6. Send email
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    const smtpConfig = getSmtpConfig();
+    if (!smtpConfig) {
       console.log('⚠️  [Scheduler] Configuration email manquante, email non envoyé.');
       console.log(`📊 [Scheduler] Stats: ${stats.totalArticles} articles, ${Object.keys(stats.byCategory).length} catégories`);
       return;
     }
 
-    const transporter = createEmailTransporter({
-      host: process.env.EMAIL_HOST,
-      port: parseInt(process.env.EMAIL_PORT || '587'),
-      secure: process.env.EMAIL_SECURE === 'true',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+    const transporter = createEmailTransporter(smtpConfig);
 
     const emailHtml = generateDailyDigestEmail(categorized, stats);
     const emailText = generateDailyDigestText(categorized, stats);
@@ -953,7 +1091,7 @@ export const triggerBlogFeedUpdate = async (customFeeds?: string[]): Promise<{ s
   }
 };
 
-export const triggerSaturdayPodcastDigest = async (): Promise<void> => {
+export const triggerSaturdayPodcastDigest = async (): Promise<SaturdayPodcastRunResult> => {
   const config: SaturdayPodcastConfig = {
     enabled: true,
     cronExpression: '',
@@ -964,7 +1102,7 @@ export const triggerSaturdayPodcastDigest = async (): Promise<void> => {
     internalApiBaseUrl: process.env.INTERNAL_API_BASE_URL || `http://127.0.0.1:${process.env.PORT || 5555}`,
   };
 
-  await runSaturdayPodcastPipeline(config);
+  return runSaturdayPodcastPipeline(config);
 };
 
 /**

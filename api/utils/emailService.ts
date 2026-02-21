@@ -4,6 +4,7 @@ export interface EmailConfig {
   host: string;
   port: number;
   secure: boolean;
+  authMethod?: string;
   auth: {
     user: string;
     pass: string;

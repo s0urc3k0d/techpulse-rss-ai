@@ -158,6 +158,29 @@ interface AutoSelectResponse {
 interface SchedulerTriggerResponse {
   message: string;
   note?: string;
+  result?: {
+    success: boolean;
+    windowStart: string;
+    generatedAt: string;
+    candidateArticles: number;
+    selectedArticles: number;
+    preparedItems: number;
+    fallbackItems: number;
+    items: Array<{
+      category: string;
+      originalTitle: string;
+      catchyTitle: string;
+      bulletPoint: string;
+      fullSummary: string;
+      link: string;
+      source: string;
+    }>;
+    emailSent: boolean;
+    emailTo: string;
+    selectionReasoning?: string;
+    note?: string;
+    error?: string;
+  };
 }
 
 interface ImportXmlResponse {
