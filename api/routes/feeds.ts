@@ -12,6 +12,7 @@
  */
 
 import { Router } from 'express';
+import { XMLParser } from 'fast-xml-parser';
 import {
   getAllArticles,
   saveArticles,
@@ -27,6 +28,42 @@ import {
 } from '../utils/feedStorage.js';
 
 const router = Router();
+
+const parseImportedXmlItems = (xmlString: string) => {
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_'
+  });
+
+  const parsed = parser.parse(xmlString);
+  const rawItems = parsed?.rss?.channel?.item || parsed?.feed?.entry || [];
+  const items = Array.isArray(rawItems) ? rawItems : [rawItems];
+
+  return items
+    .filter(Boolean)
+    .map((item: any) => {
+      const title = typeof item.title === 'object' ? item.title['#text'] || '' : (item.title || 'Sans titre');
+      const link = item.link?.['@_href'] || item.link || item.guid || '';
+      const description = item.description || item.summary || item.content || '';
+      const pubDate = item.pubDate || item.published || item.updated || new Date().toISOString();
+      const source = (typeof item.source === 'object' ? item.source['#text'] : item.source) || 'Imported RSS';
+
+      const rawCategory = item.category;
+      const category = Array.isArray(rawCategory)
+        ? (typeof rawCategory[0] === 'object' ? rawCategory[0]['#text'] || 'Autre' : rawCategory[0] || 'Autre')
+        : (typeof rawCategory === 'object' ? rawCategory?.['#text'] || 'Autre' : rawCategory || 'Autre');
+
+      return {
+        title: String(title).trim(),
+        link: String(link).trim(),
+        description: String(typeof description === 'object' ? description['#text'] || '' : description).trim(),
+        source: String(source).trim(),
+        pubDate: new Date(pubDate).toISOString(),
+        category: String(category).trim() || 'Autre',
+      };
+    })
+    .filter((item: any) => item.title && item.link);
+};
 
 /**
  * Génère le XML RSS 2.0 à partir des articles
@@ -396,6 +433,57 @@ router.post('/save', (req, res) => {
   } catch (error: any) {
     console.error('Erreur sauvegarde articles:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/feeds/import-xml
+ * Importer un ancien flux RSS XML dans le stockage interne
+ */
+router.post('/import-xml', async (req, res) => {
+  try {
+    const { xmlContent, xmlUrl, savedBy = 'manual' } = req.body;
+
+    let content: string = xmlContent;
+    if (!content && xmlUrl) {
+      const response = await fetch(xmlUrl);
+      if (!response.ok) {
+        return res.status(400).json({ error: `Unable to fetch xmlUrl: HTTP ${response.status}` });
+      }
+      content = await response.text();
+    }
+
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({
+        error: 'xmlContent (string) or xmlUrl is required',
+        example: {
+          xmlContent: '<?xml version="1.0"...>',
+          xmlUrl: 'https://example.com/old-feed.xml'
+        }
+      });
+    }
+
+    const importedArticles = parseImportedXmlItems(content).map(article => ({
+      ...article,
+      savedBy: savedBy === 'auto' ? 'auto' as const : 'manual' as const
+    }));
+    if (importedArticles.length === 0) {
+      return res.status(400).json({ error: 'No valid items found in XML feed' });
+    }
+
+    const result = saveArticles(importedArticles, savedBy === 'auto' ? 'auto' : 'manual');
+
+    res.json({
+      success: true,
+      imported: importedArticles.length,
+      saved: result.saved,
+      duplicates: result.duplicates,
+      total: result.total,
+      feedUrl: '/api/feeds/all.xml'
+    });
+  } catch (error: any) {
+    console.error('Erreur import XML:', error);
+    res.status(500).json({ error: error.message || 'XML import failed' });
   }
 });
 

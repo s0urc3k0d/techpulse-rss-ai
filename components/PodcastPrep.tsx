@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { importLegacyXmlFeed, triggerSaturdayPodcastDigest } from '../services/apiService';
 
 interface PreparedArticle {
   url: string;
@@ -17,6 +18,26 @@ export const PodcastPrep: React.FC = () => {
   const [results, setResults] = useState<PreparedArticle[]>([]);
   const [error, setError] = useState<string>('');
   const [progress, setProgress] = useState<string>('');
+  const [isTriggeringSaturdayDigest, setIsTriggeringSaturdayDigest] = useState(false);
+  const [saturdayDigestMessage, setSaturdayDigestMessage] = useState<string>('');
+  const [xmlImportUrl, setXmlImportUrl] = useState('');
+  const [isImportingXml, setIsImportingXml] = useState(false);
+  const [xmlImportMessage, setXmlImportMessage] = useState('');
+
+  const handleTriggerSaturdayDigest = async () => {
+    setIsTriggeringSaturdayDigest(true);
+    setSaturdayDigestMessage('');
+    setError('');
+
+    try {
+      const response = await triggerSaturdayPodcastDigest();
+      setSaturdayDigestMessage(response.note || response.message || 'Récap du samedi déclenché.');
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors du déclenchement du récap du samedi');
+    } finally {
+      setIsTriggeringSaturdayDigest(false);
+    }
+  };
 
   const handlePrepare = async () => {
     const urlList = urls
@@ -62,6 +83,34 @@ export const PodcastPrep: React.FC = () => {
     }
   };
 
+  const handleImportLegacyXml = async () => {
+    const trimmedUrl = xmlImportUrl.trim();
+
+    if (!trimmedUrl) {
+      setError('Veuillez entrer une URL XML valide');
+      return;
+    }
+
+    setIsImportingXml(true);
+    setXmlImportMessage('');
+    setError('');
+
+    try {
+      const response = await importLegacyXmlFeed({
+        xmlUrl: trimmedUrl,
+        savedBy: 'manual',
+      });
+
+      setXmlImportMessage(
+        `Import terminé : ${response.saved} ajouté(s), ${response.duplicates} doublon(s) sur ${response.imported} article(s).`
+      );
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de l'import du flux XML");
+    } finally {
+      setIsImportingXml(false);
+    }
+  };
+
   const copyAllToClipboard = () => {
     const text = results
       .filter(r => !r.error)
@@ -102,6 +151,66 @@ ${article.summary}
           </svg>
           Coller vos liens d'articles
         </h2>
+
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleTriggerSaturdayDigest}
+            disabled={isTriggeringSaturdayDigest}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${
+              isTriggeringSaturdayDigest
+                ? 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                : 'bg-amber-600 hover:bg-amber-500 text-white'
+            }`}
+          >
+            {isTriggeringSaturdayDigest ? (
+              <>
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Déclenchement...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 1.79-3 4s1.343 4 3 4 3-1.79 3-4-1.343-4-3-4zm0 0V4m0 12v4m8-8h-4M8 12H4" />
+                </svg>
+                Envoyer le récap du samedi maintenant
+              </>
+            )}
+          </button>
+
+          {saturdayDigestMessage && (
+            <span className="text-sm text-emerald-300">{saturdayDigestMessage}</span>
+          )}
+        </div>
+
+        <div className="mb-4 rounded-lg border border-slate-700 bg-dark/40 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input
+              type="url"
+              value={xmlImportUrl}
+              onChange={(e) => setXmlImportUrl(e.target.value)}
+              placeholder="URL de l'ancien flux XML (https://...)"
+              className="w-full sm:flex-1 bg-dark border border-slate-600 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              disabled={isImportingXml}
+            />
+            <button
+              onClick={handleImportLegacyXml}
+              disabled={isImportingXml}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                isImportingXml
+                  ? 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+              }`}
+            >
+              {isImportingXml ? 'Import...' : 'Importer XML'}
+            </button>
+          </div>
+          {xmlImportMessage && (
+            <p className="mt-2 text-sm text-emerald-300">{xmlImportMessage}</p>
+          )}
+        </div>
         
         <textarea
           value={urls}

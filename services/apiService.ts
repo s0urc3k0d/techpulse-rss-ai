@@ -155,6 +155,20 @@ interface AutoSelectResponse {
   reasoning: string;
 }
 
+interface SchedulerTriggerResponse {
+  message: string;
+  note?: string;
+}
+
+interface ImportXmlResponse {
+  success: boolean;
+  imported: number;
+  saved: number;
+  duplicates: number;
+  total: number;
+  feedUrl: string;
+}
+
 export const autoSelectArticles = async (
   articles: ProcessedArticle[],
   maxPerCategory: number = 5
@@ -199,4 +213,43 @@ export const autoSelectArticles = async (
     console.error("Auto-selection failed:", error);
     throw error;
   }
+};
+
+export const triggerSaturdayPodcastDigest = async (): Promise<SchedulerTriggerResponse> => {
+  const response = await fetch(`${API_BASE_URL}/scheduler/podcast-saturday`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || `HTTP error ${response.status}`);
+  }
+
+  return data;
+};
+
+export const importLegacyXmlFeed = async (payload: {
+  xmlUrl?: string;
+  xmlContent?: string;
+  savedBy?: 'manual' | 'auto';
+}): Promise<ImportXmlResponse> => {
+  const response = await fetch(`${API_BASE_URL}/feeds/import-xml`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || `HTTP error ${response.status}`);
+  }
+
+  return data;
 };
