@@ -1,0 +1,107 @@
+version: "3.9"
+
+services:
+  techpulse:
+    container_name: techpulse
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      PORT: "5555"
+
+      # AI Provider
+      AI_PROVIDER: ${AI_PROVIDER:-mistral}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:?MISTRAL_API_KEY is required when AI_PROVIDER=mistral}
+      MISTRAL_MODEL: ${MISTRAL_MODEL:-mistral-small-latest}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash-exp}
+
+      # API Rate Limiting
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-10}
+
+      # SMTP
+      EMAIL_HOST: ${EMAIL_HOST:?EMAIL_HOST is required}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_SECURE: ${EMAIL_SECURE:-false}
+      EMAIL_USER: ${EMAIL_USER:?EMAIL_USER is required}
+      EMAIL_PASS: ${EMAIL_PASS:?EMAIL_PASS is required}
+      EMAIL_FROM: ${EMAIL_FROM:-TechPulse AI <noreply@example.com>}
+
+      # Daily legacy digest scheduler (optional)
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-false}
+      SCHEDULER_CRON: ${SCHEDULER_CRON:-0 9 * * *}
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-Europe/Paris}
+      SCHEDULER_EMAIL_TO: ${SCHEDULER_EMAIL_TO:-}
+      SCHEDULER_RUN_ON_START: ${SCHEDULER_RUN_ON_START:-false}
+      SCHEDULER_FEEDS: ${SCHEDULER_FEEDS:-["https://news.ycombinator.com/rss","https://techcrunch.com/feed/"]}
+
+      # Hourly automation pipeline
+      AUTO_PIPELINE_ENABLED: ${AUTO_PIPELINE_ENABLED:-true}
+      AUTO_PIPELINE_CRON: ${AUTO_PIPELINE_CRON:-0 * * * *}
+      AUTO_PIPELINE_FEEDS: ${AUTO_PIPELINE_FEEDS:-["https://news.ycombinator.com/rss","https://techcrunch.com/feed/","https://www.theverge.com/rss/index.xml"]}
+      AUTO_SELECT_MAX_PER_CATEGORY: ${AUTO_SELECT_MAX_PER_CATEGORY:-5}
+      AUTO_PIPELINE_LOOKBACK_HOURS: ${AUTO_PIPELINE_LOOKBACK_HOURS:-24}
+      AUTO_PIPELINE_RUN_ON_START: ${AUTO_PIPELINE_RUN_ON_START:-false}
+
+      # Saturday podcast pipeline
+      SATURDAY_PODCAST_ENABLED: ${SATURDAY_PODCAST_ENABLED:-true}
+      SATURDAY_PODCAST_CRON: ${SATURDAY_PODCAST_CRON:-0 10 * * 6}
+      SATURDAY_PODCAST_TIMEZONE: ${SATURDAY_PODCAST_TIMEZONE:-Europe/Paris}
+      SATURDAY_PODCAST_EMAIL_TO: ${SATURDAY_PODCAST_EMAIL_TO:?SATURDAY_PODCAST_EMAIL_TO is required}
+      SATURDAY_PODCAST_MAX_PER_CATEGORY: ${SATURDAY_PODCAST_MAX_PER_CATEGORY:-2}
+      SATURDAY_PODCAST_RUN_ON_START: ${SATURDAY_PODCAST_RUN_ON_START:-false}
+      INTERNAL_API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://127.0.0.1:5555}
+
+    volumes:
+      - techpulse-data:/app/data
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5555/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-coolify}
+      - traefik.http.routers.techpulse.rule=Host(`${APP_DOMAIN:?Set APP_DOMAIN}`)
+      - traefik.http.routers.techpulse.entrypoints=websecure
+      - traefik.http.routers.techpulse.tls=true
+      - traefik.http.services.techpulse.loadbalancer.server.port=5555
+      - traefik.http.middlewares.techpulse-sec.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.techpulse-sec.headers.frameDeny=true
+      - traefik.http.middlewares.techpulse-sec.headers.browserXssFilter=true
+      - traefik.http.middlewares.techpulse-sec.headers.referrerPolicy=no-referrer-when-downgrade
+      - traefik.http.middlewares.techpulse-sec.headers.stsSeconds=31536000
+      - traefik.http.middlewares.techpulse-sec.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.techpulse-sec.headers.stsPreload=true
+      - traefik.http.routers.techpulse.middlewares=techpulse-sec@docker
+
+    networks:
+      - internal
+      - proxy
+
+networks:
+  internal:
+    driver: bridge
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-coolify}
+
+volumes:
+  techpulse-data:
+    name: techpulse-data
