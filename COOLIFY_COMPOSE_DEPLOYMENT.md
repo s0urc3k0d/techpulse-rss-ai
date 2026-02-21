@@ -76,6 +76,12 @@ Actions recommandées:
 - Horaire: `AUTO_PIPELINE_ENABLED=true`, `AUTO_PIPELINE_CRON=0 * * * *`
 - Podcast samedi: `SATURDAY_PODCAST_ENABLED=true`, `SATURDAY_PODCAST_CRON=0 10 * * 6`
 
+Réglages anti-rate-limit Mistral (recommandés):
+- `SATURDAY_PODCAST_ENRICH_DELAY_MS=1200`
+- `SATURDAY_PODCAST_ENRICH_BATCH_SIZE=4`
+- `SATURDAY_PODCAST_ENRICH_MAX_RETRIES=2`
+- `SATURDAY_PODCAST_ENRICH_RETRY_DELAY_MS=3000`
+
 Déclenchement manuel test:
 - `POST /api/scheduler/blog-feed`
 - `POST /api/scheduler/podcast-saturday`
@@ -100,6 +106,16 @@ Si vous voyez `Invalid login: 535 5.7.1 Authentication failed`:
 - Gmail/Google Workspace: utilisez un mot de passe d’application (pas le mot de passe principal)
 - Office365/Outlook: utiliser SMTP Auth activé côté tenant/boîte
 - Testez les credentials SMTP hors app avant redéploiement
+
+## 9.2) Mistral 429 Rate limit exceeded
+Si vous voyez `429 Too Many Requests` / `x-ratelimit-remaining-tokens-minute: 0`:
+- N'utilisez pas des batches massifs (100 est trop élevé en pratique pour ce prompt)
+- Augmentez `SATURDAY_PODCAST_ENRICH_DELAY_MS` (ex: `1500` à `2500`)
+- Gardez `SATURDAY_PODCAST_ENRICH_BATCH_SIZE` entre `3` et `8`
+- Gardez `SATURDAY_PODCAST_ENRICH_MAX_RETRIES=2` (ou `3` max)
+- Réduisez `SATURDAY_PODCAST_MAX_PER_CATEGORY` (ex: `1`) pour un run manuel de rattrapage
+
+Le pipeline envoie désormais un email même si l'enrichissement IA échoue, via un fallback basé sur les métadonnées article.
 
 ## 10) Checklist finale
 - [ ] DNS OK

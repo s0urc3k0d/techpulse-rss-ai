@@ -109,6 +109,28 @@ interface InternalRssArticle {
   isoDate: Date;
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const truncateText = (value: string, maxLength: number): string => {
+  if (!value) return '';
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength).trim()}...`;
+};
+
+const isRateLimitError = (error: any): boolean => {
+  const message = `${error?.message || ''} ${error?.body || ''}`.toLowerCase();
+  return error?.statusCode === 429 || message.includes('rate limit');
+};
+
+const getRetryDelayMs = (error: any, fallbackMs: number): number => {
+  const retryAfterRaw = error?.headers?.get?.('retry-after');
+  const retryAfterSec = Number(retryAfterRaw);
+  if (!Number.isNaN(retryAfterSec) && retryAfterSec > 0) {
+    return retryAfterSec * 1000;
+  }
+  return fallbackMs;
+};
+
 const parseFeedsFromEnv = (rawFeeds: string | undefined, fallback: string[]): string[] => {
   if (!rawFeeds) return fallback;
   try {
@@ -192,7 +214,12 @@ const fetchInternalRssArticles = async (baseUrl: string): Promise<InternalRssArt
     .filter((item: InternalRssArticle) => item.title && item.link && !Number.isNaN(item.isoDate.getTime()));
 };
 
-const enrichArticleForPodcastWithMistral = async (article: InternalRssArticle): Promise<PodcastPrepEmailItem> => {
+const parseJsonContent = (value: string): any => {
+  const cleaned = value.replace(/```json\n?|\n?```/g, '').trim();
+  return JSON.parse(cleaned || '{}');
+};
+
+const enrichArticlesBatchWithMistral = async (articles: InternalRssArticle[]): Promise<Map<string, PodcastPrepEmailItem>> => {
   const apiKey = process.env.MISTRAL_API_KEY;
   if (!apiKey) {
     throw new Error('MISTRAL_API_KEY is required for Saturday podcast pipeline');
@@ -202,20 +229,29 @@ const enrichArticleForPodcastWithMistral = async (article: InternalRssArticle): 
   const { Mistral } = await import('@mistralai/mistralai');
   const client = new Mistral({ apiKey });
 
-  const prompt = `Tu es rédacteur pour un podcast tech francophone. Tu dois transformer cet article en format prêt à l'oral.
+  const prompt = `Tu es rédacteur pour un podcast tech francophone.
+Transforme CHAQUE article ci-dessous en format prêt à l'oral.
 
-Article:
-- Titre: ${article.title}
-- Catégorie: ${article.category}
-- Source: ${article.source}
-- Description: ${article.description || 'N/A'}
-
-Réponds uniquement en JSON avec:
+Réponds uniquement avec un JSON valide de cette forme:
 {
-  "catchyTitle": "Titre percutant et court",
-  "bulletPoint": "Un seul point clé (une phrase)",
-  "fullSummary": "Résumé complet et fluide en français (4 à 8 phrases)"
-}`;
+  "items": [
+    {
+      "id": "id de l'article",
+      "catchyTitle": "Titre percutant et court",
+      "bulletPoint": "Un seul point clé (une phrase)",
+      "fullSummary": "Résumé complet et fluide en français (4 à 8 phrases)"
+    }
+  ]
+}
+
+Articles:
+${articles.map(article => `
+- id: ${article.id}
+  titre: ${article.title}
+  catégorie: ${article.category}
+  source: ${article.source}
+  description: ${truncateText(article.description || 'N/A', 700)}
+`).join('\n')}`;
 
   const response = await client.chat.complete({
     model,
@@ -225,17 +261,75 @@ Réponds uniquement en JSON avec:
   });
 
   const content = response.choices?.[0]?.message?.content as string || '{}';
-  const parsed = JSON.parse(content);
+  const parsed = parseJsonContent(content);
+  const returnedItems = Array.isArray(parsed?.items) ? parsed.items : [];
+
+  const byId = new Map<string, PodcastPrepEmailItem>();
+  const sourceById = new Map(articles.map(article => [article.id, article]));
+
+  returnedItems.forEach((item: any) => {
+    const original = sourceById.get(String(item?.id || ''));
+    if (!original) return;
+
+    byId.set(original.id, {
+      category: original.category,
+      originalTitle: original.title,
+      catchyTitle: item?.catchyTitle ? String(item.catchyTitle).trim() : original.title,
+      bulletPoint: item?.bulletPoint ? String(item.bulletPoint).trim() : 'Point clé non généré.',
+      fullSummary: item?.fullSummary
+        ? String(item.fullSummary).trim()
+        : (original.description || 'Résumé indisponible.'),
+      link: original.link,
+      source: original.source,
+    });
+  });
+
+  return byId;
+};
+
+const buildFallbackPodcastItem = (article: InternalRssArticle): PodcastPrepEmailItem => {
+  const description = article.description || '';
+  const firstSentence = description.split(/[.!?]\s/).map(part => part.trim()).find(Boolean);
 
   return {
     category: article.category,
     originalTitle: article.title,
-    catchyTitle: parsed.catchyTitle || article.title,
-    bulletPoint: parsed.bulletPoint || 'Point clé non généré.',
-    fullSummary: parsed.fullSummary || article.description || 'Résumé indisponible.',
+    catchyTitle: article.title,
+    bulletPoint: firstSentence ? truncateText(firstSentence, 180) : 'Point clé à confirmer depuis la source.',
+    fullSummary: description
+      ? truncateText(description.replace(/\s+/g, ' '), 900)
+      : 'Résumé indisponible automatiquement. Consultez la source pour préparer ce sujet.',
     link: article.link,
     source: article.source,
   };
+};
+
+const enrichArticlesBatchForPodcast = async (articles: InternalRssArticle[]): Promise<PodcastPrepEmailItem[]> => {
+  if (articles.length === 0) return [];
+
+  const maxRetries = Math.max(0, parseInt(process.env.SATURDAY_PODCAST_ENRICH_MAX_RETRIES || '2', 10));
+  const baseDelayMs = Math.max(500, parseInt(process.env.SATURDAY_PODCAST_ENRICH_RETRY_DELAY_MS || '3000', 10));
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const enrichedById = await enrichArticlesBatchWithMistral(articles);
+      return articles.map(article => enrichedById.get(article.id) || buildFallbackPodcastItem(article));
+    } catch (error: any) {
+      const isLastAttempt = attempt >= maxRetries;
+
+      if (isRateLimitError(error) && !isLastAttempt) {
+        const delayMs = getRetryDelayMs(error, baseDelayMs * Math.pow(2, attempt));
+        console.warn(`⏳ [SaturdayPodcast] Rate limit Mistral sur batch (${articles.length} articles). Retry ${attempt + 1}/${maxRetries} dans ${Math.round(delayMs / 1000)}s`);
+        await sleep(delayMs);
+        continue;
+      }
+
+      console.warn(`⚠️  [SaturdayPodcast] Fallback sans IA pour un batch de ${articles.length} article(s) (${isRateLimitError(error) ? 'rate-limit' : 'erreur enrichissement'})`);
+      return articles.map(article => buildFallbackPodcastItem(article));
+    }
+  }
+
+  return articles.map(article => buildFallbackPodcastItem(article));
 };
 
 const selectTopArticlesByCategory = async (
@@ -498,14 +592,21 @@ const runSaturdayPodcastPipeline = async (config: SaturdayPodcastConfig): Promis
     console.log(`🎯 [SaturdayPodcast] ${selectedArticles.length} articles sélectionnés (${selection.reasoning})`);
 
     const preparedItems: PodcastPrepEmailItem[] = [];
-    for (const article of selectedArticles) {
-      try {
-        const enriched = await enrichArticleForPodcastWithMistral(article);
-        preparedItems.push(enriched);
-      } catch (error) {
-        console.error(`❌ [SaturdayPodcast] Échec enrichissement Mistral pour: ${article.title}`, error);
-      }
-      await new Promise(resolve => setTimeout(resolve, 250));
+    const enrichmentDelayMs = Math.max(250, parseInt(process.env.SATURDAY_PODCAST_ENRICH_DELAY_MS || '1200', 10));
+    const requestedBatchSize = Math.max(1, parseInt(process.env.SATURDAY_PODCAST_ENRICH_BATCH_SIZE || '4', 10));
+    const batchSize = Math.min(20, requestedBatchSize);
+
+    if (requestedBatchSize > 20) {
+      console.warn(`⚠️  [SaturdayPodcast] SATURDAY_PODCAST_ENRICH_BATCH_SIZE=${requestedBatchSize} trop élevé, cap à 20 pour éviter les dépassements de tokens.`);
+    }
+
+    console.log(`🧩 [SaturdayPodcast] Enrichissement par lots de ${batchSize} article(s)`);
+
+    for (let i = 0; i < selectedArticles.length; i += batchSize) {
+      const batch = selectedArticles.slice(i, i + batchSize);
+      const enrichedBatch = await enrichArticlesBatchForPodcast(batch);
+      preparedItems.push(...enrichedBatch);
+      await sleep(enrichmentDelayMs);
     }
 
     if (preparedItems.length === 0) {
