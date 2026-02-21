@@ -1,12 +1,23 @@
-version: "3.9"
-
 services:
+  techpulse-init:
+    image: alpine:3.21
+    container_name: techpulse-init
+    command: ["sh", "-c", "mkdir -p /data/current /data/archives && chown -R 65532:65532 /data"]
+    volumes:
+      - techpulse-data:/data
+    restart: "no"
+    networks:
+      - internal
+
   techpulse:
     container_name: techpulse
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    depends_on:
+      techpulse-init:
+        condition: service_completed_successfully
 
     environment:
       NODE_ENV: production
@@ -60,7 +71,7 @@ services:
       - techpulse-data:/app/data
 
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5555/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:5555/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5

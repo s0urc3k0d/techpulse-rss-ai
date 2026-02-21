@@ -37,6 +37,8 @@ Points importants:
 - `PROXY_NETWORK` doit correspondre au réseau proxy Coolify (souvent `coolify`)
 - Le DNS du domaine doit pointer vers votre serveur Coolify
 
+⚠️ Si `APP_DOMAIN` est incorrect ou vide, vous aurez typiquement un certificat Traefik invalide ou "no available server" côté route.
+
 ## 5) Sécurité intégrée
 Le service est durci par défaut:
 - `read_only: true`
@@ -69,6 +71,14 @@ Déclenchement manuel test:
 - `POST /api/scheduler/blog-feed`
 - `POST /api/scheduler/podcast-saturday`
 
+## 8.1) Permissions volume (important)
+Le compose démarre un service `techpulse-init` qui prépare les droits du volume `techpulse-data` pour l'utilisateur non-root du conteneur principal.
+
+Si vous voyez `EACCES: permission denied, mkdir '/app/data/current'`:
+- Vérifiez que `techpulse-init` s'exécute bien avant `techpulse`
+- Supprimez/recréez le volume `techpulse-data` si nécessaire
+- Redéployez ensuite l'application
+
 ## 9) Notes Coolify
 - Si votre instance Coolify gère déjà le routage via UI, gardez les labels compose cohérents avec votre setup.
 - Si nécessaire, adaptez `PROXY_NETWORK`.
@@ -76,6 +86,7 @@ Déclenchement manuel test:
 
 ## 10) Checklist finale
 - [ ] DNS OK
+- [ ] `APP_DOMAIN` exactement égal au domaine configuré dans Coolify
 - [ ] Variables secrètes remplies
 - [ ] Volume persistant actif
 - [ ] Healthcheck vert
